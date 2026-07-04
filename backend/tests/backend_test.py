@@ -350,20 +350,17 @@ class TestResolvedUrl:
     """/embed must resolve DoodStream links to their final redirect domain
     (e.g. dsvplay.com -> playmogo.com) and persist the resolved_url."""
 
-    def test_embed_smiooaxb_returns_resolved_doodstream_domain(self):
+    def test_embed_smiooaxb_returns_canonical_doodstream_domain(self):
+        # Iteration 7: DoodStream embed_url is now the canonical user-pasted domain (dsvplay.com)
         r = requests.get(f"{API}/embed/SMioOAxb", timeout=30)
         if r.status_code != 200:
             pytest.skip("Seed mirror SMioOAxb not present")
         data = r.json()
         dood = next((h for h in data["hosts"] if h["host_name"] == "DoodStream"), None)
         assert dood is not None, data
-        # must be /e/ form and resolved live domain
         assert "/e/" in dood["embed_url"], dood
-        # dsvplay.com is the source; playmogo.com is a known live redirect target.
-        # We assert the domain is NOT the stored dsvplay.com stub (i.e. was resolved).
-        assert "dsvplay.com" not in dood["embed_url"], (
-            f"embed_url still points at unresolved dsvplay stub: {dood['embed_url']}"
-        )
+        from urllib.parse import urlparse
+        assert urlparse(dood["embed_url"]).netloc.lower() == "dsvplay.com", dood
 
     def test_create_new_mirror_resolves_and_persists(self, admin_token, hosts):
         headers = {"Authorization": f"Bearer {admin_token}"}
@@ -390,18 +387,17 @@ class TestResolvedUrl:
             data = r.json()
             embed_url = data["hosts"][0]["embed_url"]
             assert "/e/ysledj039kb4" in embed_url, embed_url
-            assert "dsvplay.com" not in embed_url, (
-                f"resolved URL should differ from source dsvplay.com: {embed_url}"
-            )
+            from urllib.parse import urlparse as _up
+            assert _up(embed_url).netloc.lower() == "dsvplay.com", embed_url
 
-            # 3) Confirm resolved_url persisted on the doc
+            # 3) Confirm resolved_url persisted on the doc (canonical dsvplay.com)
             r = requests.get(f"{API}/mirrors/{mid}",
                              headers=headers)
             assert r.status_code == 200, r.text
             doc = r.json()
             link = doc["links"][0]
             assert link.get("resolved_url"), f"resolved_url not persisted: {link}"
-            assert "dsvplay.com" not in link["resolved_url"], link["resolved_url"]
+            assert _up(link["resolved_url"]).netloc.lower() == "dsvplay.com", link["resolved_url"]
         finally:
             requests.delete(f"{API}/mirrors/{mid}", headers=headers)
 
@@ -421,7 +417,8 @@ class TestResolvedUrl:
             assert r.status_code == 200, r.text
             link = r.json()["links"][0]
             assert link.get("resolved_url"), f"resolved_url missing after /check: {link}"
-            assert "dsvplay.com" not in link["resolved_url"], link["resolved_url"]
+            from urllib.parse import urlparse as _up
+            assert _up(link["resolved_url"]).netloc.lower() == "dsvplay.com", link["resolved_url"]
             assert link["status"] == "online"
         finally:
             requests.delete(f"{API}/mirrors/{mid}", headers=headers)
@@ -453,12 +450,12 @@ class TestHostApiIntegration:
         assert voe_host and voe_host != "voe.sx", (
             f"VOE embed_url should be on rotating direct domain, got {voe_host}"
         )
-        # DoodStream: online, /e/<code>, resolved live domain (not dsvplay.com)
+        # DoodStream: online, /e/<code>, CANONICAL dsvplay.com (iteration 7)
         assert dood["status"] == "online", dood
         assert "/e/" in dood["embed_url"], dood
         dood_host = urlparse(dood["embed_url"]).netloc.lower()
-        assert dood_host and dood_host != "dsvplay.com", (
-            f"DoodStream embed_url should be resolved live domain, got {dood_host}"
+        assert dood_host == "dsvplay.com", (
+            f"DoodStream embed_url should be canonical dsvplay.com, got {dood_host}"
         )
 
     def test_manual_check_uses_api_populates_title(self, admin_token):
@@ -484,7 +481,7 @@ class TestHostApiIntegration:
             if name == "VOE":
                 assert resolved_host != "voe.sx", l
             if name == "DoodStream":
-                assert resolved_host != "dsvplay.com", l
+                assert resolved_host == "dsvplay.com", l
                 # title from doodstream API
                 assert l.get("title"), f"Doodstream title not populated: {l}"
 
@@ -519,7 +516,7 @@ class TestHostApiIntegration:
                 if name == "VOE":
                     assert h and h != "voe.sx", (name, l)
                 if name == "DoodStream":
-                    assert h and h != "dsvplay.com", (name, l)
+                    assert h == "dsvplay.com", (name, l)
         finally:
             requests.delete(f"{API}/mirrors/{mid}", headers=headers)
 

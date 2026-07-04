@@ -294,9 +294,11 @@ def api_resolve_link(provider: str, embed_url: str):
             active = bool(res) and str(res[0].get("status")).lower() == "active"
             info = _api_json(f"{DOOD_API}/file/info?key={key}&file_code={code}")
             ires = (info.get("result") or [{}])[0]
-            _, final_url = probe_url(embed_url)  # resolve live rotating domain
+            # Use the canonical embed URL as-is (browser follows the redirect with
+            # no-referrer, exactly like ListMirror). Do NOT bake in the rotating
+            # abuse-domain, which serves X-Frame-Options to server-side probes.
             return {"status": "online" if active else "offline",
-                    "url": final_url, "title": ires.get("title"), "thumbnail": ires.get("splash_img")}
+                    "url": embed_url, "title": ires.get("title"), "thumbnail": ires.get("splash_img")}
         if provider == "voe":
             key = os.environ.get("VOE_API_KEY")
             if not key:

@@ -1,0 +1,20 @@
+{
+  "summary": "Iteration 7 verification: DoodStream embed_url is now the canonical user-pasted domain (dsvplay.com/e/<code>) instead of the resolved rotating playmogo.com; VOE unchanged (rotating direct domain, NOT voe.sx). Backend 32/32 pytest pass after updating TestResolvedUrl + TestHostApiIntegration assertions to require host==dsvplay.com for DoodStream. GET /api/embed/SMioOAxb -> DoodStream online https://dsvplay.com/e/9bvi9u4wu0j1, VOE online https://jennifereconomicgive.com/e/rjseg1wmsyv6. POST /api/mirrors/<SMioOAxb>/check -> both online, DoodStream resolved_url on dsvplay.com with title populated, VOE resolved_url on rotating direct domain. Create flow (dsvplay.com/d/9bvi9u4wu0j1 + voe.sx/rjseg1wmsyv6) after ~8s background resolve: DoodStream resolved_url=https://dsvplay.com/e/9bvi9u4wu0j1 (canonical, /d/->/e/ normalized), VOE resolved_url on rotating direct domain, both online, mirror deleted. Regressions: geo-order ES/US, URL normalization, Cloudflare-403 stays online, admin CRUD, site settings all pass. Frontend /e/SMioOAxb: iframe referrerPolicy='no-referrer', no sandbox; DoodStream tab -> src=dsvplay.com/e/9bvi9u4wu0j1, VOE tab -> src on rotating direct domain; tab switching updates src correctly. Seeded mirrors SMioOAxb / -B7RoZcD preserved.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py api_resolve_link() Doodstream branch: still calls doodapi file/check + file/info on every resolve; consider caching per file_code with a short TTL to avoid rate-limit exposure (doodapi 10/s).",
+    "resolve_mirror_links(): a single API failure inside api_resolve_link is logged but not retried; a transient rate-limit response can leave a link with status offline until the offline_checker cycles. Add bounded retry.",
+    "_voe_domain_cache remains a plain module-level dict with no lock; consider asyncio.Lock or single-flight to avoid duplicate settings/domain calls on cache miss.",
+    "Since Doodstream embed_url is now the canonical dsvplay.com URL, api_resolve_link() Doodstream branch no longer needs its probe_url() call for domain resolution - removing it would shave ~1s per resolve. If probe is only retained for a status signal, note that file/check already provides that."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (32/32)", "frontend": "100% - iframe canonical dsvplay.com + rotating VOE + tab switch + no-referrer verified"},
+  "test_credentials": "admin@mirrorstream.com / Admin@1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "All TEST_ mirrors created inside test methods are deleted in finally blocks. Seeded mirrors SMioOAxb and -B7RoZcD preserved.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 7: DoodStream embed_url/resolved_url MUST equal dsvplay.com (canonical user-pasted). VOE embed_url MUST be on rotating direct domain (netloc != voe.sx). Backend tests updated: TestResolvedUrl.test_embed_smiooaxb_returns_canonical_doodstream_domain, and all TestHostApiIntegration DoodStream asserts flipped from '!= dsvplay.com' to '== dsvplay.com'. Frontend iframe uses referrerPolicy=no-referrer, no sandbox. dsvplay.com serves Cloudflare Turnstile so actual playback can't be asserted headlessly - that is expected downstream host behavior."
+}
