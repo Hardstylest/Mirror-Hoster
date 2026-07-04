@@ -16,6 +16,7 @@ import logging
 import uuid
 import asyncio
 import secrets
+import time
 import jwt
 import bcrypt
 import requests
@@ -110,6 +111,7 @@ class HostInput(BaseModel):
     default_rate: float = 5.0
     tiers: List[Tier] = []
     is_active: bool = True
+    api_provider: Optional[str] = None
 
 class HostLinkInput(BaseModel):
     host_id: str
@@ -235,17 +237,105 @@ def public_mirror(doc: dict) -> dict:
     doc.pop("_id", None)
     return doc
 
+# ---------------------------------------------------------------------------
+# Host API integrations (Doodstream + VOE)
+# ---------------------------------------------------------------------------
+DOOD_API = "https://doodapi.co/api"
+_voe_domain_cache = {"prefix": None, "ts": 0.0}
+
+def _api_json(url: str):
+    r = requests.get(url, timeout=12, headers={"User-Agent": "MirrorStream/1.0"})
+    return r.json()
+
+def extract_file_code(url: str):
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(url if "://" in url else "https://" + url)
+        parts = [p for p in u.path.split("/") if p]
+        if not parts:
+            return None
+        if parts[0].lower() in {"e", "d", "f", "v", "embed"} and len(parts) > 1:
+            return parts[1]
+        return parts[-1]
+    except Exception:
+        return None
+
+def voe_embed_prefix():
+    key = os.environ.get("VOE_API_KEY")
+    if not key:
+        return None
+    if _voe_domain_cache["prefix"] and time.time() - _voe_domain_cache["ts"] < 300:
+        return _voe_domain_cache["prefix"]
+    try:
+        d = _api_json(f"https://voe.sx/api/settings/domain?key={key}")
+        prefix = d.get("prefix_link_embed")
+        if prefix:
+            _voe_domain_cache["prefix"] = prefix
+            _voe_domain_cache["ts"] = time.time()
+            return prefix
+    except Exception as e:
+        logger.warning(f"VOE domain fetch failed: {e}")
+    return _voe_domain_cache["prefix"]
+
+def api_resolve_link(provider: str, embed_url: str):
+    """Use the host's official API to get accurate status + a playable embed URL.
+    Returns dict {status, url, title, thumbnail} or None to fall back to probe_url.
+    """
+    code = extract_file_code(embed_url)
+    if not code:
+        return None
+    try:
+        if provider == "doodstream":
+            key = os.environ.get("DOODSTREAM_API_KEY")
+            if not key:
+                return None
+            chk = _api_json(f"{DOOD_API}/file/check?key={key}&file_code={code}")
+            res = chk.get("result") or []
+            active = bool(res) and str(res[0].get("status")).lower() == "active"
+            info = _api_json(f"{DOOD_API}/file/info?key={key}&file_code={code}")
+            ires = (info.get("result") or [{}])[0]
+            _, final_url = probe_url(embed_url)  # resolve live rotating domain
+            return {"status": "online" if active else "offline",
+                    "url": final_url, "title": ires.get("title"), "thumbnail": ires.get("splash_img")}
+        if provider == "voe":
+            key = os.environ.get("VOE_API_KEY")
+            if not key:
+                return None
+            info = _api_json(f"https://voe.sx/api/file/info?key={key}&file_code={code}")
+            ires = (info.get("result") or [{}])[0]
+            online = ires.get("status") == 200
+            prefix = voe_embed_prefix() or "https://voe.sx/e/"
+            return {"status": "online" if online else "offline",
+                    "url": f"{prefix}{code}", "title": ires.get("title"), "thumbnail": None}
+    except Exception as e:
+        logger.warning(f"api_resolve_link {provider} failed: {e}")
+    return None
+
 async def resolve_mirror_links(mirror_id: str):
-    """Background: probe each link, store status + resolved (live) url."""
+    """Background/on-demand: use host APIs (or HTTP probe) to set status + resolved playable url."""
     try:
         m = await db.mirrors.find_one({"id": mirror_id})
         if not m:
             return
         links = m.get("links", [])
+        host_ids = [l["host_id"] for l in links]
+        providers = {}
+        async for h in db.hosts.find({"id": {"$in": host_ids}}):
+            providers[h["id"]] = h.get("api_provider")
         for l in links:
-            result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
-            l["status"] = "online" if result == "unknown" else result
-            l["resolved_url"] = final_url
+            prov = providers.get(l["host_id"])
+            api = await asyncio.to_thread(api_resolve_link, prov, l["embed_url"]) if prov else None
+            if api:
+                l["status"] = api["status"]
+                l["resolved_url"] = api["url"]
+                if api.get("title"):
+                    l["title"] = api["title"]
+                if api.get("thumbnail"):
+                    l["thumbnail"] = api["thumbnail"]
+            else:
+                result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
+                l["status"] = "online" if result == "unknown" else result
+                l["resolved_url"] = final_url
             l["last_checked"] = now_iso()
         await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": links}})
     except Exception as e:
@@ -411,13 +501,7 @@ async def check_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Mirror not found")
     if user.get("role") != "admin" and m["created_by"] != user["id"]:
         raise HTTPException(status_code=403, detail="Not allowed")
-    links = m.get("links", [])
-    for l in links:
-        result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
-        l["status"] = "online" if result == "unknown" else result
-        l["resolved_url"] = final_url
-        l["last_checked"] = now_iso()
-    await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": links}})
+    await resolve_mirror_links(mirror_id)
     updated = await db.mirrors.find_one({"id": mirror_id})
     return public_mirror(updated)
 
@@ -443,16 +527,10 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
     async for h in db.hosts.find({"id": {"$in": host_ids}}):
         hosts[h["id"]] = h
 
-    # Resolve any links that don't yet have a resolved (final redirect) url,
-    # so the iframe points at the live host domain (e.g. dsvplay.com -> playmogo.com).
-    resolved_changed = False
-    for l in m.get("links", []):
-        if not l.get("resolved_url"):
-            _, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
-            l["resolved_url"] = final_url
-            resolved_changed = True
-    if resolved_changed:
-        await db.mirrors.update_one({"slug": slug}, {"$set": {"links": m["links"]}})
+    # Resolve any links that don't yet have a resolved (live) url via host APIs / probe.
+    if any(not l.get("resolved_url") for l in m.get("links", [])):
+        await resolve_mirror_links(m["id"])
+        m = await db.mirrors.find_one({"slug": slug})
 
     enriched = []
     for l in m.get("links", []):
@@ -613,6 +691,7 @@ DEFAULT_SETTINGS = {
 DEFAULT_HOSTS = [
     {
         "name": "DoodStream", "domain": "doodstream.com", "default_rate": 5.0, "is_active": True,
+        "api_provider": "doodstream",
         "tiers": [
             {"name": "Tier 1", "rate": 33.0, "countries": ["AU", "CA", "GB", "US"]},
             {"name": "Tier 2", "rate": 22.0, "countries": ["DK", "FI", "FR", "DE", "NO", "SE"]},
@@ -623,6 +702,7 @@ DEFAULT_HOSTS = [
     },
     {
         "name": "VOE", "domain": "voe.sx", "default_rate": 4.0, "is_active": True,
+        "api_provider": "voe",
         "tiers": [
             {"name": "Tier 1", "rate": 40.0, "countries": ["US", "CA", "GB", "AU"]},
             {"name": "Tier 2", "rate": 25.0, "countries": ["DE", "FR", "NL", "CH", "AT", "SE", "NO"]},
@@ -657,6 +737,14 @@ async def seed():
         await db.settings.insert_one(dict(DEFAULT_SETTINGS))
         logger.info("Seeded default settings")
 
+    # Migrate existing hosts to attach api_provider by name.
+    await db.hosts.update_many({"name": "DoodStream", "api_provider": {"$exists": False}},
+                               {"$set": {"api_provider": "doodstream"}})
+    await db.hosts.update_many({"name": "VOE", "api_provider": {"$exists": False}},
+                               {"$set": {"api_provider": "voe"}})
+    # Clear cached resolved_url so links re-resolve through the host APIs (new VOE domain etc.)
+    await db.mirrors.update_many({}, {"$unset": {"links.$[].resolved_url": ""}})
+
     cred = ROOT_DIR.parent / "memory" / "test_credentials.md"
     try:
         cred.write_text(
@@ -675,16 +763,7 @@ async def offline_checker():
         try:
             mirrors = await db.mirrors.find({}).to_list(5000)
             for m in mirrors:
-                links = m.get("links", [])
-                changed = False
-                for l in links:
-                    result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
-                    l["status"] = "online" if result == "unknown" else result
-                    l["resolved_url"] = final_url
-                    l["last_checked"] = now_iso()
-                    changed = True
-                if changed:
-                    await db.mirrors.update_one({"id": m["id"]}, {"$set": {"links": links}})
+                await resolve_mirror_links(m["id"])
             logger.info("Offline check completed")
         except Exception as e:
             logger.error(f"Offline checker error: {e}")

@@ -7,7 +7,7 @@ import {
   Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save,
 } from "lucide-react";
 
-const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, tiers: [] };
+const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", tiers: [] };
 
 function HostEditor({ host, onClose, onSaved }) {
   const [form, setForm] = useState(
@@ -31,6 +31,7 @@ function HostEditor({ host, onClose, onSaved }) {
       domain: form.domain.replace(/^https?:\/\//, "").replace(/\/.*$/, ""),
       default_rate: parseFloat(form.default_rate) || 0,
       is_active: form.is_active,
+      api_provider: form.api_provider || null,
       tiers: form.tiers.map((t) => ({
         name: t.name,
         rate: parseFloat(t.rate) || 0,
@@ -73,6 +74,16 @@ function HostEditor({ host, onClose, onSaved }) {
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="accent-brand w-4 h-4" />
               Active
             </label>
+          </div>
+
+          <div>
+            <label className="text-sm text-muted-foreground">API provider (for accurate status + playable embed)</label>
+            <select data-testid="host-api-provider" value={form.api_provider || ""} onChange={(e) => setForm({ ...form, api_provider: e.target.value })}
+              className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 focus:border-brand outline-none">
+              <option value="">None (HTTP check only)</option>
+              <option value="doodstream">Doodstream API</option>
+              <option value="voe">VOE API</option>
+            </select>
           </div>
 
           <div>

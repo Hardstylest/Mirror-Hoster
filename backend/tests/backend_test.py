@@ -427,6 +427,103 @@ class TestResolvedUrl:
             requests.delete(f"{API}/mirrors/{mid}", headers=headers)
 
 
+# ---- Host API Integration (iteration 6) ----
+class TestHostApiIntegration:
+    """DoodStream + VOE live API integration (dsvplay/voe.sx bypass)."""
+
+    def test_hosts_have_api_provider(self, hosts):
+        dood = next(x for x in hosts if x["name"] == "DoodStream")
+        voe = next(x for x in hosts if x["name"] == "VOE")
+        assert dood.get("api_provider") == "doodstream", dood
+        assert voe.get("api_provider") == "voe", voe
+
+    def test_embed_smiooaxb_uses_api_domains(self):
+        r = requests.get(f"{API}/embed/SMioOAxb", timeout=30)
+        if r.status_code != 200:
+            pytest.skip("Seed mirror SMioOAxb not present")
+        data = r.json()
+        by = {h["host_name"]: h for h in data["hosts"]}
+        voe = by.get("VOE"); dood = by.get("DoodStream")
+        assert voe and dood, data
+        # VOE: online, /e/<code>, NOT voe.sx (rotating direct domain)
+        assert voe["status"] == "online", voe
+        assert "/e/" in voe["embed_url"], voe
+        from urllib.parse import urlparse
+        voe_host = urlparse(voe["embed_url"]).netloc.lower()
+        assert voe_host and voe_host != "voe.sx", (
+            f"VOE embed_url should be on rotating direct domain, got {voe_host}"
+        )
+        # DoodStream: online, /e/<code>, resolved live domain (not dsvplay.com)
+        assert dood["status"] == "online", dood
+        assert "/e/" in dood["embed_url"], dood
+        dood_host = urlparse(dood["embed_url"]).netloc.lower()
+        assert dood_host and dood_host != "dsvplay.com", (
+            f"DoodStream embed_url should be resolved live domain, got {dood_host}"
+        )
+
+    def test_manual_check_uses_api_populates_title(self, admin_token):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        r = requests.get(f"{API}/mirrors", headers=headers)
+        assert r.status_code == 200
+        target = next((m for m in r.json() if m.get("slug") == "SMioOAxb"), None)
+        if not target:
+            pytest.skip("Seed mirror SMioOAxb not present")
+        r = requests.post(f"{API}/mirrors/{target['id']}/check", headers=headers, timeout=90)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        by_host_name = {}
+        # need host lookup - fetch hosts
+        hs = requests.get(f"{API}/hosts", headers=headers).json()
+        host_by_id = {h["id"]: h["name"] for h in hs}
+        from urllib.parse import urlparse
+        for l in data["links"]:
+            name = host_by_id.get(l["host_id"])
+            assert l["status"] == "online", (name, l)
+            assert l.get("resolved_url"), (name, l)
+            resolved_host = urlparse(l["resolved_url"]).netloc.lower()
+            if name == "VOE":
+                assert resolved_host != "voe.sx", l
+            if name == "DoodStream":
+                assert resolved_host != "dsvplay.com", l
+                # title from doodstream API
+                assert l.get("title"), f"Doodstream title not populated: {l}"
+
+    def test_create_flow_resolves_both_providers(self, admin_token, hosts):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        dood = next(x for x in hosts if x["name"] == "DoodStream")
+        voe = next(x for x in hosts if x["name"] == "VOE")
+        payload = {
+            "title": "TEST_ApiResolveFlow",
+            "description": "iter6 create flow",
+            "links": [
+                {"host_id": dood["id"], "embed_url": "https://dsvplay.com/d/9bvi9u4wu0j1"},
+                {"host_id": voe["id"], "embed_url": "https://voe.sx/rjseg1wmsyv6"},
+            ],
+        }
+        r = requests.post(f"{API}/mirrors", json=payload, headers=headers)
+        assert r.status_code == 200, r.text
+        mid = r.json()["id"]
+        try:
+            # background resolution ~6s
+            time.sleep(8)
+            r = requests.get(f"{API}/mirrors/{mid}", headers=headers)
+            assert r.status_code == 200, r.text
+            doc = r.json()
+            from urllib.parse import urlparse
+            host_by_id = {dood["id"]: "DoodStream", voe["id"]: "VOE"}
+            for l in doc["links"]:
+                name = host_by_id.get(l["host_id"])
+                assert l["status"] == "online", (name, l)
+                assert l.get("resolved_url"), (name, l)
+                h = urlparse(l["resolved_url"]).netloc.lower()
+                if name == "VOE":
+                    assert h and h != "voe.sx", (name, l)
+                if name == "DoodStream":
+                    assert h and h != "dsvplay.com", (name, l)
+        finally:
+            requests.delete(f"{API}/mirrors/{mid}", headers=headers)
+
+
 # ---- Site Settings ----
 class TestSiteSettings:
     def test_get_settings_public_no_auth(self):
