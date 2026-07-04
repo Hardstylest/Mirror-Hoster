@@ -235,6 +235,22 @@ def public_mirror(doc: dict) -> dict:
     doc.pop("_id", None)
     return doc
 
+async def resolve_mirror_links(mirror_id: str):
+    """Background: probe each link, store status + resolved (live) url."""
+    try:
+        m = await db.mirrors.find_one({"id": mirror_id})
+        if not m:
+            return
+        links = m.get("links", [])
+        for l in links:
+            result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
+            l["status"] = "online" if result == "unknown" else result
+            l["resolved_url"] = final_url
+            l["last_checked"] = now_iso()
+        await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": links}})
+    except Exception as e:
+        logger.warning(f"resolve_mirror_links failed for {mirror_id}: {e}")
+
 
 # ---------------------------------------------------------------------------
 # Auth endpoints
@@ -344,6 +360,7 @@ async def create_mirror(inp: MirrorInput, user: dict = Depends(get_current_user)
         "created_at": now_iso(),
     }
     await db.mirrors.insert_one(doc)
+    asyncio.create_task(resolve_mirror_links(doc["id"]))
     return public_mirror(doc)
 
 @api_router.get("/mirrors/{mirror_id}")
@@ -366,10 +383,13 @@ async def update_mirror(mirror_id: str, inp: MirrorInput, user: dict = Depends(g
     existing_status = {l["host_id"]: l for l in m.get("links", [])}
     for l in links:
         prev = existing_status.get(l["host_id"])
-        l["status"] = prev["status"] if prev and prev.get("embed_url") == l["embed_url"] else "pending"
-        l["last_checked"] = prev["last_checked"] if prev else None
+        unchanged = prev and prev.get("embed_url") == l["embed_url"]
+        l["status"] = prev["status"] if unchanged else "pending"
+        l["last_checked"] = prev["last_checked"] if unchanged else None
+        l["resolved_url"] = prev.get("resolved_url") if unchanged else None
     await db.mirrors.update_one({"id": mirror_id},
                                 {"$set": {"title": inp.title, "description": inp.description or "", "links": links}})
+    asyncio.create_task(resolve_mirror_links(mirror_id))
     updated = await db.mirrors.find_one({"id": mirror_id})
     return public_mirror(updated)
 
