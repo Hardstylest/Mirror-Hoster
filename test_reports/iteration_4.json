@@ -1,0 +1,20 @@
+{
+  "summary": "Iteration 4 validates URL normalization on mirror create/update and the new iframe config. Backend: 27/27 pytest cases pass including 2 new TestNormalization tests. POST /api/mirrors with dsvplay.com/d/f2yosowjefyz and voe.sx/xbelauz0emae is auto-converted to dsvplay.com/e/f2yosowjefyz and voe.sx/e/xbelauz0emae. PUT /api/mirrors/<id> also normalizes; already-correct /e/ URLs stay unchanged; doodstream.com/embed/xyz -> /e/xyz. Edge cases verified: unknown multi-segment path (dsvplay.com/foo/bar/baz) left untouched, bare single-segment id gets /e/ prefix, query string preserved (voe.sx/abc123?autoplay=1 -> voe.sx/e/abc123?autoplay=1). Regression: SMioOAxb offline-check still returns online for both Cloudflare-protected hosts; genuine 404 URL still flagged offline; embed ES/US geo-ordering still correct; admin login + mirror create/update/delete OK.\n\nFrontend: On /e/SMioOAxb iframe attributes confirmed: sandbox attribute NOT present, referrerPolicy='origin', allow='autoplay; encrypted-media; fullscreen; picture-in-picture', allowFullScreen=true. Switching host-tab-voe <-> host-tab-doodstream updates iframe src (voe.sx/e/rjseg1wmsyv6 <-> dsvplay.com/e/9bvi9u4wu0j1). Both tabs show green Wifi (online).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py normalize_embed_url(): correctly handles /d/, /f/, /v/, /e/, /embed/ prefixes plus bare single-segment ids, preserves query strings, and leaves unknown multi-segment paths untouched. Local import of urlparse/urlunparse inside function is fine but redundant since urlparse is already imported at module top.",
+    "normalize_embed_url() lowercases only the prefix check but does not lowercase the netloc; a URL like https://VOE.SX/xxx would still work since urlunparse preserves netloc. Acceptable.",
+    "enrich_host_links now mutates the stored embed_url on every PUT; combined with the check `prev.embed_url == l.embed_url` in update_mirror, previously-checked links whose URL was normalized will be reset to status='pending'. Minor UX quirk (not a bug) - flag if users report link status resetting after an edit."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (27/27)", "frontend": "100% - iframe config, tab switching verified"},
+  "test_credentials": "admin@mirrorstream.com / Admin@1234 (from /app/memory/test_credentials.md).",
+  "seed_data_creation": "TEST_Normalize and TEST_NormEdges mirrors created and deleted within each test (finally block). No residual test data. Seeded mirrors SMioOAxb and -B7RoZcD preserved as instructed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 4 focused on normalize_embed_url() correctness + iframe config (referrerPolicy=origin, no sandbox). All checks pass. TestNormalization covers /d/, /embed/, bare-id, already-/e/, unknown multi-segment, query preservation, and update path.",
+  "rca of the issue": "N/A - feature working correctly. Behavior: normalize_embed_url() parses the URL, drops known prefix segments (d/f/v/e/embed), rewrites path to /e/<rest>; for a single-segment bare id, prefixes /e/; multi-segment unknown paths are returned unchanged. Applied in enrich_host_links so both create_mirror and update_mirror normalize on save."
+}

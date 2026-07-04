@@ -252,7 +252,7 @@ class TestOfflineCheckFix:
             "links": [
                 # genuine 404
                 {"host_id": dood["id"],
-                 "embed_url": "https://www.google.com/thispagedoesnotexist12345"},
+                 "embed_url": "https://www.google.com/search/thispagedoesnotexist12345"},
                 # cloudflare-protected but live
                 {"host_id": voe["id"], "embed_url": "https://voe.sx/e/rjseg1wmsyv6"},
             ],
@@ -264,10 +264,83 @@ class TestOfflineCheckFix:
             r = requests.post(f"{API}/mirrors/{mid}/check", headers=headers, timeout=90)
             assert r.status_code == 200, r.text
             links = {l["embed_url"]: l["status"] for l in r.json()["links"]}
-            assert links["https://www.google.com/thispagedoesnotexist12345"] == "offline", \
+            assert links["https://www.google.com/search/thispagedoesnotexist12345"] == "offline", \
                 f"Real 404 must be offline, got {links}"
             assert links["https://voe.sx/e/rjseg1wmsyv6"] == "online", \
                 f"Cloudflare voe must stay online, got {links}"
+        finally:
+            requests.delete(f"{API}/mirrors/{mid}", headers=headers)
+
+
+# ---- URL Normalization (iteration 4) ----
+class TestNormalization:
+    """Non-embed host URLs should be auto-converted to /e/ form on create/update."""
+
+    def test_create_mirror_normalizes_urls(self, admin_token, hosts):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        dood = next(x for x in hosts if x["name"] == "DoodStream")
+        voe = next(x for x in hosts if x["name"] == "VOE")
+        payload = {
+            "title": "TEST_Normalize",
+            "description": "url normalize",
+            "links": [
+                {"host_id": dood["id"], "embed_url": "https://dsvplay.com/d/f2yosowjefyz"},
+                {"host_id": voe["id"], "embed_url": "https://voe.sx/xbelauz0emae"},
+            ],
+        }
+        r = requests.post(f"{API}/mirrors", json=payload, headers=headers)
+        assert r.status_code == 200, r.text
+        m = r.json()
+        mid = m["id"]
+        try:
+            by_host = {l["host_id"]: l["embed_url"] for l in m["links"]}
+            assert by_host[dood["id"]] == "https://dsvplay.com/e/f2yosowjefyz", by_host
+            assert by_host[voe["id"]] == "https://voe.sx/e/xbelauz0emae", by_host
+
+            # Update with more variants
+            payload2 = {
+                "title": "TEST_Normalize",
+                "description": "url normalize v2",
+                "links": [
+                    # already-correct /e/ must stay unchanged
+                    {"host_id": dood["id"], "embed_url": "https://dsvplay.com/e/keepme"},
+                    # /embed/xyz -> /e/xyz
+                    {"host_id": voe["id"], "embed_url": "https://doodstream.com/embed/xyz"},
+                ],
+            }
+            r = requests.put(f"{API}/mirrors/{mid}", json=payload2, headers=headers)
+            assert r.status_code == 200, r.text
+            m2 = r.json()
+            urls = [l["embed_url"] for l in m2["links"]]
+            assert "https://dsvplay.com/e/keepme" in urls, urls
+            assert "https://doodstream.com/e/xyz" in urls, urls
+        finally:
+            requests.delete(f"{API}/mirrors/{mid}", headers=headers)
+
+    def test_normalization_edge_cases(self, admin_token, hosts):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        dood = next(x for x in hosts if x["name"] == "DoodStream")
+        voe = next(x for x in hosts if x["name"] == "VOE")
+        payload = {
+            "title": "TEST_NormEdges",
+            "description": "edges",
+            "links": [
+                # unknown multi-segment prefix -> unchanged
+                {"host_id": dood["id"], "embed_url": "https://dsvplay.com/foo/bar/baz"},
+                # bare id single-segment -> gets /e/ prefix; preserve query string
+                {"host_id": voe["id"], "embed_url": "https://voe.sx/abc123?autoplay=1"},
+            ],
+        }
+        r = requests.post(f"{API}/mirrors", json=payload, headers=headers)
+        assert r.status_code == 200, r.text
+        m = r.json()
+        mid = m["id"]
+        try:
+            by_host = {l["host_id"]: l["embed_url"] for l in m["links"]}
+            # unknown pattern left alone
+            assert by_host[dood["id"]] == "https://dsvplay.com/foo/bar/baz", by_host
+            # bare id becomes /e/ AND query preserved
+            assert by_host[voe["id"]] == "https://voe.sx/e/abc123?autoplay=1", by_host
         finally:
             requests.delete(f"{API}/mirrors/{mid}", headers=headers)
 

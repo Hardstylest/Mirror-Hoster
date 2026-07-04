@@ -184,6 +184,31 @@ def check_url_status(url: str) -> str:
     except Exception:
         return "unknown"
 
+def normalize_embed_url(url: str) -> str:
+    """Convert a pasted host URL into its /e/ embed form.
+    e.g. voe.sx/xbel -> voe.sx/e/xbel ; dsvplay.com/d/abc -> dsvplay.com/e/abc
+    """
+    from urllib.parse import urlparse, urlunparse
+    try:
+        raw = url.strip()
+        if not raw:
+            return url
+        u = urlparse(raw if "://" in raw else "https://" + raw)
+        parts = [p for p in u.path.split("/") if p]
+        if not parts:
+            return url
+        prefixes = {"d", "f", "v", "e", "embed"}
+        if parts[0].lower() in prefixes:
+            new_path = "/e/" + "/".join(parts[1:])
+        elif len(parts) == 1:
+            new_path = f"/e/{parts[0]}"
+        else:
+            return raw  # unknown pattern, leave untouched
+        return urlunparse((u.scheme or "https", u.netloc, new_path, "", u.query, ""))
+    except Exception:
+        return url
+
+
 async def enrich_host_links(links: List[dict]) -> List[dict]:
     host_ids = [l["host_id"] for l in links]
     hosts = {}
@@ -195,6 +220,7 @@ async def enrich_host_links(links: List[dict]) -> List[dict]:
         if not h:
             continue
         item = dict(l)
+        item["embed_url"] = normalize_embed_url(item.get("embed_url", ""))
         item["host_name"] = h["name"]
         item["host_domain"] = h["domain"]
         out.append(item)
