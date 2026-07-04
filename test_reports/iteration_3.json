@@ -1,0 +1,24 @@
+{
+  "summary": "Iteration 3 validates the two bug fixes: (1) offline-check false positives on Cloudflare/DDoS-Guard protected hosts, and (2) iframe sandbox attribute for the embed player. Backend: all 23 pytest cases pass (18 previous + 2 new TestOfflineCheckFix + 3 site settings). New tests confirm POST /api/mirrors/<id>/check on slug SMioOAxb returns 'online' for BOTH VOE (voe.sx) and DoodStream (dsvplay.com/playmogo.com) links despite them returning HTTP 403 challenge pages to the checker, AND that a genuine 404 URL (google.com/thispagedoesnotexist12345) is still correctly marked 'offline' while a Cloudflare-protected voe.sx URL stays 'online' - proving the discriminator still works. GET /api/embed/SMioOAxb returns hosts with no 'offline' status. Geo-ordering regression (ES / US country override) still passes.\n\nFrontend: /e/SMioOAxb iframe has sandbox='allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation allow-top-navigation-by-user-activation', referrerPolicy='strict-origin-when-cross-origin', allow='autoplay; encrypted-media; fullscreen; picture-in-picture', allowFullScreen=true. Switching host-tab-voe <-> host-tab-doodstream updates iframe src (voe.sx/e/rjseg1wmsyv6 -> dsvplay.com/e/9bvi9u4wu0j1). Both tabs show Wifi (online) icon, no offline overlay. Admin login -> /admin OK; dashboard /dashboard shows Sasha Unleashed with green 'Online' badges for both VOE and DoodStream; Online Links=4, Offline Links=0. check-mirror button works without error. No console errors related to the fix (only the expected upstream 403 from voe/playmogo which is out of scope).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py check_url_status(): uses requests.get with 10s timeout in a thread pool - fine for now, but a mirror with many links will serialize checks. Consider asyncio.gather with httpx.AsyncClient for parallel checks (perf, not correctness).",
+    "check_url_status() reads only first 40k chars for not-found markers - reasonable, but Doodstream's 'Not Found' page might appear later on some CDN edges; low risk given 404/410 short-circuit already handles most cases.",
+    "VideoPlayer.jsx: allow attribute (autoplay/encrypted-media/fullscreen/picture-in-picture) triggers browser warning 'Allow attribute will take precedence over allowfullscreen' - allowFullScreen is technically redundant but harmless; can remove to silence warning."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py", "/app/test_reports/iteration_3.json"],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "100% - iframe attrs, tab switching, dashboard badges, admin panel all verified"},
+  "test_credentials": "admin@mirrorstream.com / Admin@1234 (from /app/memory/test_credentials.md).",
+  "seed_data_creation": "Created and deleted TEST_OfflineDetect mirror (with a genuine 404 URL and a voe.sx URL) inside test_genuine_404_marked_offline_but_voe_stays_online. Cleaned up in finally block. Existing TEST_UI_Movie from iteration 1 still present.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fixes in iteration 3 verified: check_url_status now returns online/offline/unknown; unknown->online mapping in check_mirror + offline_checker. Iframe sandbox restored. Regression suite covers this at TestOfflineCheckFix. Existing seeded mirrors: SMioOAxb (Sasha Unleashed), -B7RoZcD (Perfect Match 1) - both used real Cloudflare-protected hosts and now correctly show Online. Do NOT delete these seeded mirrors.",
+  "rca of the issue": "ROOT CAUSE: previous check_url_status returned 'offline' for any HTTP status >=400. Since dsvplay.com / playmogo.com / voe.sx sit behind Cloudflare/DDoS-Guard which returns 403 (or a JS challenge page) to non-browser clients, every online video was being flagged offline. FIX (server.py:152-185): new tri-state check - 404/410 => offline; body contains 'just a moment'/'ddos-guard'/etc. => unknown; 200 + not-found text => offline; else 200 => online; anything else => unknown. check_mirror + offline_checker map unknown->online so protected hosts are treated as up. VideoPlayer.jsx re-added a permissive sandbox with allow-scripts/same-origin/etc. plus referrerPolicy='strict-origin-when-cross-origin' so the host iframe can execute its player logic (previous iterations had removed sandbox entirely). Reproduction (before fix): POST /api/mirrors/<SMioOAxb id>/check would return both links with status='offline'. After fix: both return 'online'. Validated via 2 pytest cases + manual dashboard screenshot."
+}

@@ -215,6 +215,63 @@ class TestAdmin:
         assert r.status_code == 403
 
 
+# ---- Offline-check false positive fix (iteration 3) ----
+class TestOfflineCheckFix:
+    """The check must treat Cloudflare/DDoS-Guard 403 challenges as ONLINE and only
+    return offline for definitive signals (404/410 / explicit not-found)."""
+
+    def test_smiooaxb_hosts_stay_online(self, admin_token):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        # find SMioOAxb
+        r = requests.get(f"{API}/mirrors", headers=headers)
+        assert r.status_code == 200
+        target = next((m for m in r.json() if m.get("slug") == "SMioOAxb"), None)
+        if not target:
+            pytest.skip("Seed mirror SMioOAxb not present in this environment")
+        r = requests.post(f"{API}/mirrors/{target['id']}/check", headers=headers, timeout=90)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert len(data["links"]) >= 1
+        for l in data["links"]:
+            assert l["status"] == "online", (
+                f"Cloudflare-protected host wrongly flagged offline: {l.get('embed_url')} -> {l['status']}"
+            )
+        # embed endpoint should also reflect this
+        r = requests.get(f"{API}/embed/SMioOAxb")
+        assert r.status_code == 200
+        for h in r.json()["hosts"]:
+            assert h["status"] != "offline", f"Embed marks online host as offline: {h}"
+
+    def test_genuine_404_marked_offline_but_voe_stays_online(self, admin_token, hosts):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        dood = next(x for x in hosts if x["name"] == "DoodStream")
+        voe = next(x for x in hosts if x["name"] == "VOE")
+        payload = {
+            "title": "TEST_OfflineDetect",
+            "description": "detect genuine 404 vs cloudflare",
+            "links": [
+                # genuine 404
+                {"host_id": dood["id"],
+                 "embed_url": "https://www.google.com/thispagedoesnotexist12345"},
+                # cloudflare-protected but live
+                {"host_id": voe["id"], "embed_url": "https://voe.sx/e/rjseg1wmsyv6"},
+            ],
+        }
+        r = requests.post(f"{API}/mirrors", json=payload, headers=headers)
+        assert r.status_code == 200, r.text
+        mid = r.json()["id"]
+        try:
+            r = requests.post(f"{API}/mirrors/{mid}/check", headers=headers, timeout=90)
+            assert r.status_code == 200, r.text
+            links = {l["embed_url"]: l["status"] for l in r.json()["links"]}
+            assert links["https://www.google.com/thispagedoesnotexist12345"] == "offline", \
+                f"Real 404 must be offline, got {links}"
+            assert links["https://voe.sx/e/rjseg1wmsyv6"] == "online", \
+                f"Cloudflare voe must stay online, got {links}"
+        finally:
+            requests.delete(f"{API}/mirrors/{mid}", headers=headers)
+
+
 # ---- Site Settings ----
 class TestSiteSettings:
     def test_get_settings_public_no_auth(self):

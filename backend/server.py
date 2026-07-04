@@ -149,21 +149,40 @@ def rate_for_country(host: dict, country_code: str) -> float:
             return float(tier["rate"])
     return float(host.get("default_rate", 0))
 
-def check_url_online(url: str) -> bool:
+def check_url_status(url: str) -> str:
+    """Returns 'online', 'offline', or 'unknown'.
+    Video hosts (Doodstream/VOE) sit behind Cloudflare/DDoS-Guard and return 403
+    challenge pages to bots even when the video is live. We must NOT treat those as
+    offline. Only definitive signals (404/410 or explicit not-found text) mean offline.
+    """
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; MirrorStreamBot/1.0)"}
-        r = requests.get(url, timeout=8, headers=headers, allow_redirects=True)
-        if r.status_code >= 400:
-            return False
-        body = r.text.lower()[:20000]
-        offline_markers = ["file not found", "video not found", "deleted", "removed",
-                           "does not exist", "404 not found", "no longer available",
-                           "file you are looking for"]
-        if any(m in body for m in offline_markers):
-            return False
-        return True
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        r = requests.get(url, timeout=10, headers=headers, allow_redirects=True)
+        code = r.status_code
+        if code in (404, 410):
+            return "offline"
+        body = r.text.lower()[:40000]
+        challenge = ["just a moment", "ddos-guard", "checking your browser",
+                     "cf-browser-verification", "attention required", "enable javascript and cookies"]
+        if any(x in body for x in challenge):
+            return "unknown"
+        if code == 200:
+            not_found = ["file you are looking for", "file not found", "video not found",
+                         "video has been deleted", "file has been removed", "no longer available",
+                         "this video is unavailable", "404 not found", "file was deleted",
+                         "video is unavailable"]
+            if any(m in body for m in not_found):
+                return "offline"
+            return "online"
+        # 403/429/503/5xx and anything else -> can't determine (assume protected/live)
+        return "unknown"
     except Exception:
-        return False
+        return "unknown"
 
 async def enrich_host_links(links: List[dict]) -> List[dict]:
     host_ids = [l["host_id"] for l in links]
@@ -344,8 +363,8 @@ async def check_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Not allowed")
     links = m.get("links", [])
     for l in links:
-        online = await asyncio.to_thread(check_url_online, l["embed_url"])
-        l["status"] = "online" if online else "offline"
+        result = await asyncio.to_thread(check_url_status, l["embed_url"])
+        l["status"] = "online" if result == "unknown" else result
         l["last_checked"] = now_iso()
     await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": links}})
     updated = await db.mirrors.find_one({"id": mirror_id})
@@ -597,8 +616,8 @@ async def offline_checker():
                 links = m.get("links", [])
                 changed = False
                 for l in links:
-                    online = await asyncio.to_thread(check_url_online, l["embed_url"])
-                    l["status"] = "online" if online else "offline"
+                    result = await asyncio.to_thread(check_url_status, l["embed_url"])
+                    l["status"] = "online" if result == "unknown" else result
                     l["last_checked"] = now_iso()
                     changed = True
                 if changed:

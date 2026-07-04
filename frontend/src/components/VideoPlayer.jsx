@@ -78,6 +78,7 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
             frameBorder="0"
             scrolling="no"
             allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-presentation allow-top-navigation-by-user-activation"
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             referrerPolicy="strict-origin-when-cross-origin"
           />
