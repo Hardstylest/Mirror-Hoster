@@ -5,6 +5,7 @@ import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { LanguageToggle } from "../components/LanguageToggle";
+import { AdSlot } from "../components/AdSlot";
 import { VideoPlayer } from "../components/VideoPlayer";
 import { Film, Globe2, TrendingUp } from "lucide-react";
 
@@ -57,7 +58,11 @@ export default function EmbedPlayer() {
           </div>
         </div>
 
+        <AdSlot html={settings.ad_player_top} testid="ad-player-top" className="flex justify-center mb-4" />
+
         <VideoPlayer hosts={data.hosts} onHostView={recordHostView} />
+
+        <AdSlot html={settings.ad_player_bottom} testid="ad-player-bottom" className="flex justify-center mt-4" />
 
         {data.description && (
           <p className="mt-4 text-sm text-muted-foreground">{data.description}</p>

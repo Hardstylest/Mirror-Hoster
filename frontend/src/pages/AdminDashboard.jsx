@@ -142,6 +142,8 @@ export default function AdminDashboard() {
   useEffect(() => { setSiteForm({
     site_name: settings.site_name || "", tagline: settings.tagline || "",
     description: settings.description || "", footer_text: settings.footer_text || "",
+    ad_header: settings.ad_header || "", ad_footer: settings.ad_footer || "",
+    ad_player_top: settings.ad_player_top || "", ad_player_bottom: settings.ad_player_bottom || "",
   }); }, [settings]);
 
   const saveSite = async () => {
@@ -166,6 +168,7 @@ export default function AdminDashboard() {
     { id: "hosts", label: t("admin.tab.hosts") },
     { id: "users", label: t("admin.tab.users") },
     { id: "settings", label: t("admin.tab.settings") },
+    { id: "ads", label: t("admin.tab.ads") },
   ];
 
   return (
@@ -281,6 +284,29 @@ export default function AdminDashboard() {
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
             <button onClick={saveSite} disabled={savingSite} data-testid="save-settings-button"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+              <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
+            </button>
+          </div>
+        )}
+
+        {tab === "ads" && siteForm && (
+          <div className="max-w-2xl bg-card border border-border rounded-lg p-6 space-y-5" data-testid="ads-panel">
+            <p className="text-sm text-muted-foreground">{t("admin.ads.intro")}</p>
+            {[
+              { key: "ad_header", label: t("admin.ads.header") },
+              { key: "ad_footer", label: t("admin.ads.footer") },
+              { key: "ad_player_top", label: t("admin.ads.playerTop") },
+              { key: "ad_player_bottom", label: t("admin.ads.playerBottom") },
+            ].map((f) => (
+              <div key={f.key}>
+                <label className="text-sm text-muted-foreground">{f.label}</label>
+                <textarea data-testid={`setting-${f.key}`} rows={3} value={siteForm[f.key]} onChange={(e) => setSiteForm({ ...siteForm, [f.key]: e.target.value })}
+                  placeholder="<script>…</script> / <ins>…</ins>"
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              </div>
+            ))}
+            <button onClick={saveSite} disabled={savingSite} data-testid="save-ads-button"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
               <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
             </button>

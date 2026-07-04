@@ -4,6 +4,7 @@ import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { LanguageToggle } from "../components/LanguageToggle";
+import { AdSlot } from "../components/AdSlot";
 import { Film, Globe2, LayoutGrid, WifiOff, BarChart3, ArrowRight } from "lucide-react";
 
 const featureDefs = [
@@ -38,6 +39,8 @@ export default function LandingPage() {
         </div>
       </header>
 
+      <AdSlot html={settings.ad_header} testid="ad-header" className="flex justify-center py-3 border-b border-border" />
+
       <section className="relative grid-bg overflow-hidden">
         <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-brand/10 rounded-full blur-[120px]" />
         <div className="relative max-w-5xl mx-auto px-6 py-28 text-center">
@@ -68,6 +71,8 @@ export default function LandingPage() {
           </div>
         ))}
       </section>
+
+      <AdSlot html={settings.ad_footer} testid="ad-footer" className="flex justify-center py-6" />
 
       <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground">
         © {new Date().getFullYear()} {settings.site_name}. {settings.footer_text}

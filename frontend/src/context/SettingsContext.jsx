@@ -8,6 +8,10 @@ const FALLBACK = {
   tagline: "One embed link. Every host. Maximum revenue.",
   description: "",
   footer_text: "For legal content only.",
+  ad_header: "",
+  ad_footer: "",
+  ad_player_top: "",
+  ad_player_bottom: "",
 };
 
 export const SettingsProvider = ({ children }) => {

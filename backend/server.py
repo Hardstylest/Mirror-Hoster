@@ -652,6 +652,10 @@ class SettingsInput(BaseModel):
     tagline: str = ""
     description: str = ""
     footer_text: str = ""
+    ad_header: str = ""
+    ad_footer: str = ""
+    ad_player_top: str = ""
+    ad_player_bottom: str = ""
 
 @api_router.get("/settings")
 async def get_settings():
@@ -659,7 +663,7 @@ async def get_settings():
     if not s:
         return DEFAULT_SETTINGS
     s.pop("_id", None)
-    return s
+    return {**DEFAULT_SETTINGS, **s}
 
 @api_router.put("/admin/settings")
 async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_user)):
@@ -690,6 +694,10 @@ DEFAULT_SETTINGS = {
     "tagline": "One embed link. Every host. Maximum revenue.",
     "description": "Paste your embed links from Doodstream, VOE and other hosters. We generate a single player that always shows your viewers the best-paying source for their country.",
     "footer_text": "For legal content only.",
+    "ad_header": "",
+    "ad_footer": "",
+    "ad_player_top": "",
+    "ad_player_bottom": "",
 }
 
 DEFAULT_HOSTS = [

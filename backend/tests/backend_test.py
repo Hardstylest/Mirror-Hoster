@@ -588,3 +588,58 @@ class TestSiteSettings:
                 }
             requests.put(f"{API}/admin/settings", json=reset_payload, headers=headers)
 
+# ---- Ad Settings (iteration 9) ----
+class TestAdSettings:
+    def test_get_settings_has_ad_keys_default_empty(self):
+        r = requests.get(f"{API}/settings")
+        assert r.status_code == 200
+        d = r.json()
+        for k in ["ad_header", "ad_footer", "ad_player_top", "ad_player_bottom"]:
+            assert k in d, f"missing {k}"
+        # after previous iteration cleanup they should be empty; but if not empty
+        # we still just verify string type
+        for k in ["ad_header", "ad_footer", "ad_player_top", "ad_player_bottom"]:
+            assert isinstance(d[k], str)
+
+    def test_admin_update_and_reset_ads(self, admin_token):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        orig = requests.get(f"{API}/settings").json()
+        try:
+            payload = {
+                "site_name": orig.get("site_name", "MirrorStream"),
+                "tagline": orig.get("tagline", ""),
+                "description": orig.get("description", ""),
+                "footer_text": orig.get("footer_text", ""),
+                "ad_header": '<div data-testid="live-ad-header">MY AD</div>',
+                "ad_footer": '<div data-testid="live-ad-footer">FOOT</div>',
+                "ad_player_top": '<div data-testid="live-ad-player-top">PT</div>',
+                "ad_player_bottom": '<div data-testid="live-ad-player-bottom">PB</div>',
+            }
+            r = requests.put(f"{API}/admin/settings", json=payload, headers=headers)
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["ad_header"] == payload["ad_header"]
+            # verify GET
+            r = requests.get(f"{API}/settings")
+            d = r.json()
+            for k in ("ad_header", "ad_footer", "ad_player_top", "ad_player_bottom"):
+                assert d[k] == payload[k], f"{k} not persisted: {d[k]}"
+        finally:
+            # reset ads to empty, preserve base settings
+            reset = {
+                "site_name": "MirrorStream",
+                "tagline": "One embed link. Every host. Maximum revenue.",
+                "description": orig.get("description", ""),
+                "footer_text": "For legal content only.",
+                "ad_header": "",
+                "ad_footer": "",
+                "ad_player_top": "",
+                "ad_player_bottom": "",
+            }
+            requests.put(f"{API}/admin/settings", json=reset, headers=headers)
+            # confirm reset
+            d = requests.get(f"{API}/settings").json()
+            for k in ("ad_header", "ad_footer", "ad_player_top", "ad_player_bottom"):
+                assert d[k] == "", f"ad {k} not reset: {d[k]!r}"
+
+

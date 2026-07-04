@@ -36,6 +36,7 @@ function App() {
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
                   <Route path="/e/:slug" element={<EmbedPlayer />} />
+                  <Route path="/embed/:slug" element={<EmbedPlayer />} />
                   <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
                   <Route path="/dashboard/new" element={<Protected><MirrorForm /></Protected>} />
                   <Route path="/dashboard/edit/:id" element={<Protected><MirrorForm /></Protected>} />
