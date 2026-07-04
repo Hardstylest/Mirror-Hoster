@@ -484,6 +484,28 @@ async def admin_stats(admin: dict = Depends(get_admin_user)):
     return {"total_users": total_users, "total_mirrors": total_mirrors,
             "total_hosts": total_hosts, "total_views": total_views, "offline_links": offline_links}
 
+class SettingsInput(BaseModel):
+    site_name: str
+    tagline: str = ""
+    description: str = ""
+    footer_text: str = ""
+
+@api_router.get("/settings")
+async def get_settings():
+    s = await db.settings.find_one({"key": "site"})
+    if not s:
+        return DEFAULT_SETTINGS
+    s.pop("_id", None)
+    return s
+
+@api_router.put("/admin/settings")
+async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_user)):
+    data = inp.model_dump()
+    data["key"] = "site"
+    await db.settings.update_one({"key": "site"}, {"$set": data}, upsert=True)
+    data.pop("_id", None)
+    return data
+
 @api_router.get("/admin/users")
 async def admin_users(admin: dict = Depends(get_admin_user)):
     users = await db.users.find({}).to_list(2000)
@@ -499,6 +521,14 @@ async def admin_users(admin: dict = Depends(get_admin_user)):
 # ---------------------------------------------------------------------------
 # Seed + background jobs
 # ---------------------------------------------------------------------------
+DEFAULT_SETTINGS = {
+    "key": "site",
+    "site_name": "MirrorStream",
+    "tagline": "One embed link. Every host. Maximum revenue.",
+    "description": "Paste your embed links from Doodstream, VOE and other hosters. We generate a single player that always shows your viewers the best-paying source for their country.",
+    "footer_text": "For legal content only.",
+}
+
 DEFAULT_HOSTS = [
     {
         "name": "DoodStream", "domain": "doodstream.com", "default_rate": 5.0, "is_active": True,
@@ -541,6 +571,10 @@ async def seed():
             doc["created_at"] = now_iso()
             await db.hosts.insert_one(doc)
         logger.info("Seeded default hosts")
+
+    if await db.settings.count_documents({"key": "site"}) == 0:
+        await db.settings.insert_one(dict(DEFAULT_SETTINGS))
+        logger.info("Seeded default settings")
 
     cred = ROOT_DIR.parent / "memory" / "test_credentials.md"
     try:

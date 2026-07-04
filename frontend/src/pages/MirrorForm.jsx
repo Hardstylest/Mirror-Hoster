@@ -58,7 +58,7 @@ export default function MirrorForm() {
   return (
     <DashboardLayout>
       <div className="p-8 max-w-3xl mx-auto">
-        <button onClick={() => navigate("/dashboard")} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-white mb-6 transition-colors">
+        <button onClick={() => navigate("/dashboard")} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors">
           <ArrowLeft size={16} /> Back
         </button>
         <h1 className="font-display font-black text-3xl mb-1">{editing ? "Edit Mirror" : "New Mirror"}</h1>
@@ -70,12 +70,12 @@ export default function MirrorForm() {
               <label className="text-sm text-muted-foreground">Title</label>
               <input data-testid="mirror-title-input" required value={title} onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. The Matrix (1999)"
-                className="mt-1 w-full bg-[#0A0A0C] border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
             <div>
               <label className="text-sm text-muted-foreground">Description <span className="opacity-60">(optional)</span></label>
               <textarea data-testid="mirror-description-input" value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
-                className="mt-1 w-full bg-[#0A0A0C] border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
 
             <div className="space-y-4">
@@ -91,7 +91,7 @@ export default function MirrorForm() {
                     value={links[h.id] || ""}
                     onChange={(e) => setLinks((p) => ({ ...p, [h.id]: e.target.value }))}
                     placeholder={`https://${h.domain}/e/xxxxx`}
-                    className="flex-1 bg-[#0A0A0C] border border-border rounded-md px-4 py-2.5 font-mono text-sm focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                    className="flex-1 bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-sm focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
                 </div>
               ))}
             </div>

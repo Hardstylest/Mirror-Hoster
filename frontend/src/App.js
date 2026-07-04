@@ -2,6 +2,8 @@ import "./App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ThemeProvider } from "./context/ThemeContext";
+import { SettingsProvider } from "./context/SettingsContext";
 import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -23,22 +25,26 @@ function App() {
   return (
     <div className="App">
       <Toaster theme="dark" position="top-right" richColors />
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/e/:slug" element={<EmbedPlayer />} />
-            <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
-            <Route path="/dashboard/new" element={<Protected><MirrorForm /></Protected>} />
-            <Route path="/dashboard/edit/:id" element={<Protected><MirrorForm /></Protected>} />
-            <Route path="/dashboard/stats/:id" element={<Protected><MirrorStats /></Protected>} />
-            <Route path="/admin" element={<Protected adminOnly><AdminDashboard /></Protected>} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
+      <ThemeProvider>
+        <SettingsProvider>
+          <BrowserRouter>
+            <AuthProvider>
+              <Routes>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/e/:slug" element={<EmbedPlayer />} />
+                <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+                <Route path="/dashboard/new" element={<Protected><MirrorForm /></Protected>} />
+                <Route path="/dashboard/edit/:id" element={<Protected><MirrorForm /></Protected>} />
+                <Route path="/dashboard/stats/:id" element={<Protected><MirrorStats /></Protected>} />
+                <Route path="/admin" element={<Protected adminOnly><AdminDashboard /></Protected>} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </SettingsProvider>
+      </ThemeProvider>
     </div>
   );
 }

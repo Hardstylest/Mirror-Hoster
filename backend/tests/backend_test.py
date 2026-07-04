@@ -213,3 +213,55 @@ class TestAdmin:
         assert r.status_code == 403
         r = requests.get(f"{API}/admin/users", headers={"Authorization": f"Bearer {user_creds['token']}"})
         assert r.status_code == 403
+
+
+# ---- Site Settings ----
+class TestSiteSettings:
+    def test_get_settings_public_no_auth(self):
+        r = requests.get(f"{API}/settings")
+        assert r.status_code == 200
+        d = r.json()
+        for k in ["site_name", "tagline", "description", "footer_text"]:
+            assert k in d
+        assert isinstance(d["site_name"], str) and len(d["site_name"]) > 0
+
+    def test_non_admin_cannot_update_settings(self, user_creds):
+        r = requests.put(f"{API}/admin/settings",
+                         json={"site_name": "Hack", "tagline": "x", "description": "y", "footer_text": "z"},
+                         headers={"Authorization": f"Bearer {user_creds['token']}"})
+        assert r.status_code == 403
+
+    def test_admin_update_and_reset_settings(self, admin_token):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        # snapshot current
+        orig = requests.get(f"{API}/settings").json()
+        try:
+            new_name = f"TEST_Site_{uuid.uuid4().hex[:6]}"
+            payload = {"site_name": new_name, "tagline": "TEST tagline",
+                       "description": "TEST desc", "footer_text": "TEST footer"}
+            r = requests.put(f"{API}/admin/settings", json=payload, headers=headers)
+            assert r.status_code == 200
+            assert r.json()["site_name"] == new_name
+            # verify GET returns new value
+            r = requests.get(f"{API}/settings")
+            assert r.status_code == 200
+            assert r.json()["site_name"] == new_name
+            assert r.json()["tagline"] == "TEST tagline"
+        finally:
+            # reset to original defaults from problem statement
+            reset_payload = {
+                "site_name": orig.get("site_name", "MirrorStream"),
+                "tagline": orig.get("tagline", "One embed link. Every host. Maximum revenue."),
+                "description": orig.get("description", ""),
+                "footer_text": orig.get("footer_text", "For legal content only."),
+            }
+            # if the original was our test value (unlikely but safe), force defaults
+            if reset_payload["site_name"].startswith("TEST_"):
+                reset_payload = {
+                    "site_name": "MirrorStream",
+                    "tagline": "One embed link. Every host. Maximum revenue.",
+                    "description": "Paste your embed links from Doodstream, VOE and other hosters. We generate a single player that always shows your viewers the best-paying source for their country.",
+                    "footer_text": "For legal content only.",
+                }
+            requests.put(f"{API}/admin/settings", json=reset_payload, headers=headers)
+

@@ -1,18 +1,28 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../lib/api";
+import { useTheme } from "../context/ThemeContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar,
 } from "recharts";
 import { ArrowLeft, Eye, Globe2 } from "lucide-react";
 
-const tooltipStyle = { backgroundColor: "#0F0F12", border: "1px solid #222228", borderRadius: 8, color: "#fff" };
-
 export default function MirrorStats() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [data, setData] = useState(null);
+
+  const dark = theme === "dark";
+  const grid = dark ? "#222228" : "#E2E5EA";
+  const axis = dark ? "#71717A" : "#94A3B8";
+  const tooltipStyle = {
+    backgroundColor: dark ? "#0F0F12" : "#FFFFFF",
+    border: `1px solid ${grid}`,
+    borderRadius: 8,
+    color: dark ? "#fff" : "#0A0A0C",
+  };
 
   useEffect(() => {
     api.get(`/stats/mirror/${id}`).then((r) => setData(r.data));
@@ -21,7 +31,7 @@ export default function MirrorStats() {
   return (
     <DashboardLayout>
       <div className="p-8 max-w-5xl mx-auto">
-        <button onClick={() => navigate("/dashboard")} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-white mb-6 transition-colors">
+        <button onClick={() => navigate("/dashboard")} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors">
           <ArrowLeft size={16} /> Back
         </button>
         <h1 className="font-display font-black text-3xl mb-8">Mirror Statistics</h1>
@@ -48,9 +58,9 @@ export default function MirrorStats() {
               {data.timeline.length === 0 ? <p className="text-muted-foreground text-sm">No views recorded yet.</p> : (
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={data.timeline}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#222228" />
-                    <XAxis dataKey="date" stroke="#71717A" fontSize={12} />
-                    <YAxis stroke="#71717A" fontSize={12} allowDecimals={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={grid} />
+                    <XAxis dataKey="date" stroke={axis} fontSize={12} />
+                    <YAxis stroke={axis} fontSize={12} allowDecimals={false} />
                     <Tooltip contentStyle={tooltipStyle} />
                     <Line type="monotone" dataKey="views" stroke="#48C7F2" strokeWidth={2.5} dot={{ fill: "#48C7F2", r: 3 }} />
                   </LineChart>
@@ -64,9 +74,9 @@ export default function MirrorStats() {
                 {data.countries.length === 0 ? <p className="text-muted-foreground text-sm">No data yet.</p> : (
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={data.countries} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" stroke="#222228" horizontal={false} />
-                      <XAxis type="number" stroke="#71717A" fontSize={12} allowDecimals={false} />
-                      <YAxis type="category" dataKey="country" stroke="#71717A" fontSize={12} width={90} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={grid} horizontal={false} />
+                      <XAxis type="number" stroke={axis} fontSize={12} allowDecimals={false} />
+                      <YAxis type="category" dataKey="country" stroke={axis} fontSize={12} width={90} />
                       <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(72,199,242,0.08)" }} />
                       <Bar dataKey="views" fill="#48C7F2" radius={[0, 4, 4, 0]} />
                     </BarChart>
@@ -78,9 +88,9 @@ export default function MirrorStats() {
                 {data.per_host.every((h) => h.views === 0) ? <p className="text-muted-foreground text-sm">No host selections recorded yet.</p> : (
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart data={data.per_host}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#222228" vertical={false} />
-                      <XAxis dataKey="host_name" stroke="#71717A" fontSize={12} />
-                      <YAxis stroke="#71717A" fontSize={12} allowDecimals={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke={grid} vertical={false} />
+                      <XAxis dataKey="host_name" stroke={axis} fontSize={12} />
+                      <YAxis stroke={axis} fontSize={12} allowDecimals={false} />
                       <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(72,199,242,0.08)" }} />
                       <Bar dataKey="views" fill="#48C7F2" radius={[4, 4, 0, 0]} />
                     </BarChart>

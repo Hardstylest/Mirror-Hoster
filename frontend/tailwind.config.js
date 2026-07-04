@@ -20,6 +20,8 @@ module.exports = {
       colors: {
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        surface: 'hsl(var(--surface))',
+        'tab-active': 'hsl(var(--tab-active))',
         brand: {
           DEFAULT: '#48C7F2',
           hover: '#6BD3F4',

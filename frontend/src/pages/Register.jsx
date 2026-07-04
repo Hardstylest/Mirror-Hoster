@@ -47,17 +47,17 @@ export default function Register() {
             <div>
               <label className="text-sm text-muted-foreground">Name</label>
               <input data-testid="register-name-input" required value={name} onChange={(e) => setName(e.target.value)}
-                className="mt-1 w-full bg-[#0A0A0C] border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
             <div>
               <label className="text-sm text-muted-foreground">Email</label>
               <input data-testid="register-email-input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full bg-[#0A0A0C] border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
             <div>
               <label className="text-sm text-muted-foreground">Password</label>
               <input data-testid="register-password-input" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full bg-[#0A0A0C] border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
           </div>
           <button data-testid="register-submit-button" disabled={loading} type="submit"

@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../lib/api";
+import { useSettings } from "../context/SettingsContext";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { VideoPlayer } from "../components/VideoPlayer";
 import { Film, Globe2, TrendingUp } from "lucide-react";
 
 export default function EmbedPlayer() {
   const { slug } = useParams();
+  const { settings } = useSettings();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
 
@@ -42,6 +45,7 @@ export default function EmbedPlayer() {
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand/10 border border-brand/30 text-brand">
               <TrendingUp size={14} /> Best-paying host first
             </span>
+            <ThemeToggle />
           </div>
         </div>
 
@@ -50,7 +54,7 @@ export default function EmbedPlayer() {
         {data.description && (
           <p className="mt-4 text-sm text-muted-foreground">{data.description}</p>
         )}
-        <p className="mt-6 text-center text-xs text-muted-foreground font-mono">Powered by MirrorStream</p>
+        <p className="mt-6 text-center text-xs text-muted-foreground font-mono">Powered by {settings.site_name}</p>
       </div>
     </div>
   );

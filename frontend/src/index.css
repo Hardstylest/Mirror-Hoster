@@ -10,25 +10,47 @@ body {
     font-family: 'IBM Plex Sans', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #050505;
-    color: #ffffff;
 }
 
-::selection {
-    background: #48C7F2;
-    color: #050505;
-}
+::selection { background: #48C7F2; color: #050505; }
 
-/* Cyan scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #0a0a0c; }
-::-webkit-scrollbar-thumb { background: #222228; border-radius: 6px; }
+::-webkit-scrollbar-track { background: hsl(var(--surface)); }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: #48C7F2; }
 
 @layer base {
+    /* Light theme (default) */
     :root {
-        --background: 0 0% 2%;
+        --background: 210 25% 97%;
+        --foreground: 240 10% 6%;
+        --surface: 214 20% 94%;
+        --tab-active: 0 0% 100%;
+        --card: 0 0% 100%;
+        --card-foreground: 240 10% 6%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 240 10% 6%;
+        --primary: 196 87% 61%;
+        --primary-foreground: 0 0% 2%;
+        --secondary: 214 22% 91%;
+        --secondary-foreground: 240 10% 6%;
+        --muted: 214 22% 91%;
+        --muted-foreground: 240 5% 40%;
+        --accent: 196 87% 61%;
+        --accent-foreground: 0 0% 2%;
+        --destructive: 0 84% 55%;
+        --destructive-foreground: 0 0% 100%;
+        --border: 214 18% 85%;
+        --input: 214 18% 85%;
+        --ring: 196 87% 61%;
+        --radius: 0.5rem;
+    }
+    /* Dark theme */
+    .dark {
+        --background: 240 8% 2%;
         --foreground: 0 0% 100%;
+        --surface: 240 10% 4%;
+        --tab-active: 240 8% 12%;
         --card: 240 8% 6%;
         --card-foreground: 0 0% 100%;
         --popover: 240 8% 6%;
@@ -46,7 +68,6 @@ body {
         --border: 240 6% 14%;
         --input: 240 6% 14%;
         --ring: 196 87% 61%;
-        --radius: 0.5rem;
     }
 }
 
@@ -65,7 +86,7 @@ body {
 
 .grid-bg {
     background-image:
-        linear-gradient(to right, rgba(72,199,242,0.06) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(72,199,242,0.06) 1px, transparent 1px);
+        linear-gradient(to right, rgba(72,199,242,0.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(72,199,242,0.08) 1px, transparent 1px);
     background-size: 44px 44px;
 }

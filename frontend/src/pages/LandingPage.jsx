@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useSettings } from "../context/SettingsContext";
+import { ThemeToggle } from "../components/ThemeToggle";
 import { Film, Globe2, LayoutGrid, WifiOff, BarChart3, ArrowRight } from "lucide-react";
 
 const features = [
@@ -11,19 +13,21 @@ const features = [
 
 export default function LandingPage() {
   const { user } = useAuth();
+  const { settings } = useSettings();
   return (
-    <div className="min-h-screen bg-background text-white">
+    <div className="min-h-screen bg-background text-foreground">
       <header className="flex items-center justify-between px-6 md:px-12 h-16 border-b border-border">
         <div className="flex items-center gap-2">
           <Film className="text-brand" size={22} />
-          <span className="font-display font-black text-lg tracking-tight">MirrorStream</span>
+          <span className="font-display font-black text-lg tracking-tight">{settings.site_name}</span>
         </div>
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           {user ? (
             <Link to="/dashboard" data-testid="header-dashboard-link" className="px-4 py-2 rounded-md bg-brand text-black font-semibold text-sm hover:bg-brand-hover transition-colors">Dashboard</Link>
           ) : (
             <>
-              <Link to="/login" data-testid="header-login-link" className="px-4 py-2 text-sm text-muted-foreground hover:text-white transition-colors">Sign in</Link>
+              <Link to="/login" data-testid="header-login-link" className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">Sign in</Link>
               <Link to="/register" data-testid="header-register-link" className="px-4 py-2 rounded-md bg-brand text-black font-semibold text-sm hover:bg-brand-hover transition-colors">Get started</Link>
             </>
           )}
@@ -37,14 +41,14 @@ export default function LandingPage() {
           <h1 className="mt-6 font-display font-black text-4xl sm:text-5xl lg:text-6xl tracking-tight leading-[1.05]">
             One embed link.<br />Every host. <span className="text-brand">Maximum revenue.</span>
           </h1>
-          <p className="mt-6 max-w-2xl mx-auto text-base md:text-lg text-slate-300 leading-relaxed">
-            Paste your embed links from Doodstream, VOE and other hosters. We generate a single player that always shows your viewers the best-paying source for their country.
+          <p className="mt-6 max-w-2xl mx-auto text-base md:text-lg text-muted-foreground leading-relaxed">
+            {settings.description || settings.tagline}
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">
             <Link to={user ? "/dashboard" : "/register"} data-testid="hero-cta-button" className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
               Start mirroring <ArrowRight size={18} />
             </Link>
-            <Link to="/login" data-testid="hero-signin-button" className="px-6 py-3 rounded-md border border-border text-white hover:border-brand transition-colors">Sign in</Link>
+            <Link to="/login" data-testid="hero-signin-button" className="px-6 py-3 rounded-md border border-border text-foreground hover:border-brand transition-colors">Sign in</Link>
           </div>
         </div>
       </section>
@@ -62,7 +66,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-border py-8 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} MirrorStream. For legal content only.
+        © {new Date().getFullYear()} {settings.site_name}. {settings.footer_text}
       </footer>
     </div>
   );

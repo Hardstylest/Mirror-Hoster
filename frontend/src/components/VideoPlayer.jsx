@@ -27,7 +27,7 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
   return (
     <div className="w-full">
       {/* Browser-style tab bar */}
-      <div className="flex items-end gap-1 overflow-x-auto bg-[#0A0A0C] rounded-t-lg border border-b-0 border-border px-2 pt-2">
+      <div className="flex items-end gap-1 overflow-x-auto bg-surface rounded-t-lg border border-b-0 border-border px-2 pt-2">
         {hosts.map((h, i) => {
           const isActive = i === active;
           return (
@@ -37,8 +37,8 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
               data-testid={`host-tab-${h.host_name.toLowerCase()}`}
               className={`group flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap rounded-t-md transition-colors relative ${
                 isActive
-                  ? "bg-[#1C1C21] text-white"
-                  : "bg-[#0A0A0C] text-muted-foreground hover:text-white"
+                  ? "bg-tab-active text-foreground"
+                  : "bg-surface text-muted-foreground hover:text-foreground"
               }`}
             >
               {isActive && <span className="absolute top-0 left-0 right-0 h-[2px] bg-brand rounded-t-md" />}
@@ -67,7 +67,7 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
             <WifiOff size={40} className="text-offline" />
             <p className="text-white font-medium">This source is offline</p>
-            <p className="text-sm text-muted-foreground">Please select another provider tab above.</p>
+            <p className="text-sm text-zinc-400">Please select another provider tab above.</p>
           </div>
         ) : (
           <iframe
@@ -75,9 +75,11 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
             src={current.embed_url}
             title={current.host_name}
             className="w-full h-full"
+            frameBorder="0"
+            scrolling="no"
             allowFullScreen
-            allow="autoplay; encrypted-media; fullscreen"
-            referrerPolicy="no-referrer"
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+            referrerPolicy="strict-origin-when-cross-origin"
           />
         )}
       </div>

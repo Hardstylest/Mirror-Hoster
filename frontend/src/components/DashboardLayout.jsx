@@ -1,9 +1,12 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useSettings } from "../context/SettingsContext";
+import { ThemeToggle } from "./ThemeToggle";
 import { LayoutDashboard, Shield, LogOut, Film, Plus } from "lucide-react";
 
 export const DashboardLayout = ({ children }) => {
   const { user, logout } = useAuth();
+  const { settings } = useSettings();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -20,10 +23,13 @@ export const DashboardLayout = ({ children }) => {
   return (
     <div className="min-h-screen flex bg-background">
       <aside className="w-64 shrink-0 border-r border-border bg-card/40 flex flex-col fixed h-screen">
-        <Link to="/dashboard" className="flex items-center gap-2 px-6 h-16 border-b border-border">
-          <Film className="text-brand" size={22} />
-          <span className="font-display font-black text-lg tracking-tight">MirrorStream</span>
-        </Link>
+        <div className="flex items-center justify-between px-6 h-16 border-b border-border">
+          <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
+            <Film className="text-brand shrink-0" size={22} />
+            <span className="font-display font-black text-lg tracking-tight truncate">{settings.site_name}</span>
+          </Link>
+          <ThemeToggle />
+        </div>
         <nav className="flex-1 p-4 space-y-1">
           {nav.map((n) => {
             const active = location.pathname === n.to || (n.to === "/dashboard" && location.pathname.startsWith("/dashboard"));
@@ -33,7 +39,7 @@ export const DashboardLayout = ({ children }) => {
                 to={n.to}
                 data-testid={`nav-${n.label.toLowerCase().replace(/\s+/g, "-")}`}
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
-                  active ? "bg-brand/10 text-brand" : "text-muted-foreground hover:text-white hover:bg-secondary"
+                  active ? "bg-brand/10 text-brand" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 }`}
               >
                 <n.icon size={18} />

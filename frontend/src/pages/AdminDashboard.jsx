@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import api, { faviconUrl, formatApiError } from "../lib/api";
+import { useSettings } from "../context/SettingsContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save,
 } from "lucide-react";
 
 const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, tiers: [] };
@@ -50,23 +51,23 @@ function HostEditor({ host, onClose, onSaved }) {
       <div className="bg-card border border-border rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card">
           <h3 className="font-display font-bold text-lg">{host ? "Edit Host" : "Add Host"}</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-white"><X size={20} /></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
         </div>
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm text-muted-foreground">Name</label>
-              <input data-testid="host-name-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full bg-[#0A0A0C] border border-border rounded-md px-3 py-2 focus:border-brand outline-none" />
+              <input data-testid="host-name-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 focus:border-brand outline-none" />
             </div>
             <div>
               <label className="text-sm text-muted-foreground">Domain</label>
-              <input data-testid="host-domain-input" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="voe.sx" className="mt-1 w-full bg-[#0A0A0C] border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+              <input data-testid="host-domain-input" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="voe.sx" className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
             </div>
           </div>
           <div className="flex items-center gap-6">
             <div>
               <label className="text-sm text-muted-foreground">Default rate ($/10k)</label>
-              <input data-testid="host-default-rate-input" type="number" step="0.5" value={form.default_rate} onChange={(e) => setForm({ ...form, default_rate: e.target.value })} className="mt-1 w-32 bg-[#0A0A0C] border border-border rounded-md px-3 py-2 focus:border-brand outline-none" />
+              <input data-testid="host-default-rate-input" type="number" step="0.5" value={form.default_rate} onChange={(e) => setForm({ ...form, default_rate: e.target.value })} className="mt-1 w-32 bg-surface border border-border rounded-md px-3 py-2 focus:border-brand outline-none" />
             </div>
             <label className="flex items-center gap-2 text-sm mt-5 cursor-pointer">
               <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} className="accent-brand w-4 h-4" />
@@ -81,7 +82,7 @@ function HostEditor({ host, onClose, onSaved }) {
             </div>
             <div className="space-y-2">
               {form.tiers.map((t, i) => (
-                <div key={i} className="flex items-center gap-2 bg-[#0A0A0C] border border-border rounded-md p-2">
+                <div key={i} className="flex items-center gap-2 bg-surface border border-border rounded-md p-2">
                   <input value={t.name} onChange={(e) => setTier(i, "name", e.target.value)} placeholder="Tier name" className="w-28 bg-transparent border border-border rounded px-2 py-1.5 text-sm focus:border-brand outline-none" />
                   <input type="number" step="0.5" value={t.rate} onChange={(e) => setTier(i, "rate", e.target.value)} placeholder="$" className="w-20 bg-transparent border border-border rounded px-2 py-1.5 text-sm focus:border-brand outline-none" />
                   <input value={t.countries} onChange={(e) => setTier(i, "countries", e.target.value)} placeholder="US, GB, DE …" className="flex-1 bg-transparent border border-border rounded px-2 py-1.5 text-sm font-mono focus:border-brand outline-none" />
@@ -114,6 +115,9 @@ export default function AdminDashboard() {
   const [hosts, setHosts] = useState([]);
   const [users, setUsers] = useState([]);
   const [editor, setEditor] = useState(null); // {host} or {new:true}
+  const { settings, reloadSettings } = useSettings();
+  const [siteForm, setSiteForm] = useState(null);
+  const [savingSite, setSavingSite] = useState(false);
 
   const load = useCallback(async () => {
     const [s, h, u] = await Promise.all([api.get("/admin/stats"), api.get("/hosts"), api.get("/admin/users")]);
@@ -121,6 +125,20 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setSiteForm({
+    site_name: settings.site_name || "", tagline: settings.tagline || "",
+    description: settings.description || "", footer_text: settings.footer_text || "",
+  }); }, [settings]);
+
+  const saveSite = async () => {
+    setSavingSite(true);
+    try {
+      await api.put("/admin/settings", siteForm);
+      await reloadSettings();
+      toast.success("Site settings saved");
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    setSavingSite(false);
+  };
 
   const deleteHost = async (id) => {
     if (!window.confirm("Delete this host?")) return;
@@ -133,6 +151,7 @@ export default function AdminDashboard() {
     { id: "overview", label: "Overview" },
     { id: "hosts", label: "Hosts & Rates" },
     { id: "users", label: "Users" },
+    { id: "settings", label: "Site Settings" },
   ];
 
   return (
@@ -144,7 +163,7 @@ export default function AdminDashboard() {
         <div className="flex gap-1 border-b border-border mb-8">
           {tabs.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} data-testid={`admin-tab-${t.id}`}
-              className={`px-4 py-2.5 text-sm border-b-2 transition-colors ${tab === t.id ? "border-brand text-brand" : "border-transparent text-muted-foreground hover:text-white"}`}>
+              className={`px-4 py-2.5 text-sm border-b-2 transition-colors ${tab === t.id ? "border-brand text-brand" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {t.label}
             </button>
           ))}
@@ -185,7 +204,7 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex flex-wrap gap-2 mt-4">
                     {h.tiers.map((t, i) => (
-                      <div key={i} className="text-xs bg-[#0A0A0C] border border-border rounded px-2.5 py-1.5">
+                      <div key={i} className="text-xs bg-surface border border-border rounded px-2.5 py-1.5">
                         <span className="text-brand font-semibold">${t.rate}</span>
                         <span className="text-muted-foreground"> · {t.name}: </span>
                         <span className="font-mono">{t.countries.join(", ")}</span>
@@ -201,7 +220,7 @@ export default function AdminDashboard() {
         {tab === "users" && (
           <div className="bg-card border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-[#0A0A0C] text-muted-foreground">
+              <thead className="bg-surface text-muted-foreground">
                 <tr>
                   <th className="text-left px-5 py-3 font-medium">Name</th>
                   <th className="text-left px-5 py-3 font-medium">Email</th>
@@ -224,6 +243,36 @@ export default function AdminDashboard() {
             </table>
           </div>
         )}
+
+        {tab === "settings" && siteForm && (
+          <div className="max-w-2xl bg-card border border-border rounded-lg p-6 space-y-5" data-testid="site-settings-panel">
+            <div>
+              <label className="text-sm text-muted-foreground">Site name</label>
+              <input data-testid="setting-site-name" value={siteForm.site_name} onChange={(e) => setSiteForm({ ...siteForm, site_name: e.target.value })}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Tagline</label>
+              <input data-testid="setting-tagline" value={siteForm.tagline} onChange={(e) => setSiteForm({ ...siteForm, tagline: e.target.value })}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Description</label>
+              <textarea data-testid="setting-description" rows={3} value={siteForm.description} onChange={(e) => setSiteForm({ ...siteForm, description: e.target.value })}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Footer text</label>
+              <input data-testid="setting-footer" value={siteForm.footer_text} onChange={(e) => setSiteForm({ ...siteForm, footer_text: e.target.value })}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+            <button onClick={saveSite} disabled={savingSite} data-testid="save-settings-button"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+              <Save size={18} /> {savingSite ? "Saving…" : "Save settings"}
+            </button>
+          </div>
+        )}
+
       </div>
 
       {editor && (
