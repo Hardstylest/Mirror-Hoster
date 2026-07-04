@@ -3,10 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import api, { faviconUrl, formatApiError } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
+import { useI18n } from "../context/I18nContext";
 import { ArrowLeft, Save } from "lucide-react";
 
 export default function MirrorForm() {
   const { id } = useParams();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const editing = Boolean(id);
   const [hosts, setHosts] = useState([]);
@@ -42,12 +44,12 @@ export default function MirrorForm() {
         .filter(([, url]) => url && url.trim())
         .map(([host_id, embed_url]) => ({ host_id, embed_url: embed_url.trim() })),
     };
-    if (payload.links.length === 0) { toast.error("Add at least one embed link"); return; }
+    if (payload.links.length === 0) { toast.error(t("form.needLink")); return; }
     setSaving(true);
     try {
       if (editing) await api.put(`/mirrors/${id}`, payload);
       else await api.post("/mirrors", payload);
-      toast.success(editing ? "Mirror updated" : "Mirror created");
+      toast.success(editing ? t("form.updated") : t("form.created"));
       navigate("/dashboard");
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
@@ -59,27 +61,27 @@ export default function MirrorForm() {
     <DashboardLayout>
       <div className="p-8 max-w-3xl mx-auto">
         <button onClick={() => navigate("/dashboard")} className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors">
-          <ArrowLeft size={16} /> Back
+          <ArrowLeft size={16} /> {t("common.back")}
         </button>
-        <h1 className="font-display font-black text-3xl mb-1">{editing ? "Edit Mirror" : "New Mirror"}</h1>
-        <p className="text-muted-foreground mb-8">Paste your embed links for each host. Leave blank to skip a host.</p>
+        <h1 className="font-display font-black text-3xl mb-1">{editing ? t("form.edit") : t("form.new")}</h1>
+        <p className="text-muted-foreground mb-8">{t("form.subtitle")}</p>
 
-        {loading ? <p className="text-muted-foreground font-mono">Loading…</p> : (
+        {loading ? <p className="text-muted-foreground font-mono">{t("common.loading")}</p> : (
           <form onSubmit={submit} className="space-y-6">
             <div>
-              <label className="text-sm text-muted-foreground">Title</label>
+              <label className="text-sm text-muted-foreground">{t("form.title")}</label>
               <input data-testid="mirror-title-input" required value={title} onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. The Matrix (1999)"
+                placeholder={t("form.titlePlaceholder")}
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
             <div>
-              <label className="text-sm text-muted-foreground">Description <span className="opacity-60">(optional)</span></label>
+              <label className="text-sm text-muted-foreground">{t("form.description")} <span className="opacity-60">({t("common.optional")})</span></label>
               <textarea data-testid="mirror-description-input" value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
 
             <div className="space-y-4">
-              <label className="text-sm text-muted-foreground">Host Embed Links</label>
+              <label className="text-sm text-muted-foreground">{t("form.hostLinks")}</label>
               {hosts.map((h) => (
                 <div key={h.id} className="flex items-center gap-3">
                   <div className="flex items-center gap-2 w-40 shrink-0">
@@ -98,7 +100,7 @@ export default function MirrorForm() {
 
             <button data-testid="save-mirror-button" disabled={saving} type="submit"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
-              <Save size={18} /> {saving ? "Saving…" : editing ? "Save changes" : "Create mirror"}
+              <Save size={18} /> {saving ? t("form.saving") : editing ? t("form.saveChanges") : t("form.createMirror")}
             </button>
           </form>
         )}

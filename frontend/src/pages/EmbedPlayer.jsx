@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../lib/api";
 import { useSettings } from "../context/SettingsContext";
+import { useI18n } from "../context/I18nContext";
 import { ThemeToggle } from "../components/ThemeToggle";
+import { LanguageToggle } from "../components/LanguageToggle";
 import { VideoPlayer } from "../components/VideoPlayer";
 import { Film, Globe2, TrendingUp } from "lucide-react";
 
 export default function EmbedPlayer() {
   const { slug } = useParams();
   const { settings } = useSettings();
+  const { t } = useI18n();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
 
@@ -23,19 +26,23 @@ export default function EmbedPlayer() {
   };
 
   if (error) return (
-    <div className="min-h-screen flex items-center justify-center text-muted-foreground">{error}</div>
+    <div className="min-h-screen flex items-center justify-center text-muted-foreground">{t("player.notFound")}</div>
   );
 
   if (!data) return (
-    <div className="min-h-screen flex items-center justify-center text-brand font-mono">Loading player…</div>
+    <div className="min-h-screen flex items-center justify-center text-brand font-mono">{t("player.loading")}</div>
   );
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <Film className="text-brand" size={20} />
+          <div className="flex items-center gap-3 min-w-0">
+            {data.thumbnail ? (
+              <img src={data.thumbnail} alt="" className="w-16 h-10 rounded object-cover border border-border shrink-0" onError={(e) => (e.currentTarget.style.display = "none")} />
+            ) : (
+              <Film className="text-brand shrink-0" size={20} />
+            )}
             <h1 className="font-display font-bold text-xl truncate">{data.title}</h1>
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -43,8 +50,9 @@ export default function EmbedPlayer() {
               <Globe2 size={14} /> {data.country} ({data.country_code})
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand/10 border border-brand/30 text-brand">
-              <TrendingUp size={14} /> Best-paying host first
+              <TrendingUp size={14} /> {t("player.bestFirst")}
             </span>
+            <LanguageToggle />
             <ThemeToggle />
           </div>
         </div>
@@ -54,7 +62,7 @@ export default function EmbedPlayer() {
         {data.description && (
           <p className="mt-4 text-sm text-muted-foreground">{data.description}</p>
         )}
-        <p className="mt-6 text-center text-xs text-muted-foreground font-mono">Powered by {settings.site_name}</p>
+        <p className="mt-6 text-center text-xs text-muted-foreground font-mono">{t("player.poweredBy")} {settings.site_name}</p>
       </div>
     </div>
   );

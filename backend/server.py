@@ -545,6 +545,7 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
             "host_domain": h["domain"],
             "embed_url": l.get("resolved_url") or l["embed_url"],
             "status": l.get("status", "pending"),
+            "thumbnail": l.get("thumbnail"),
             "rate": rate_for_country(h, cc),
         })
     # Highest paying first; offline hosts pushed to the bottom
@@ -567,6 +568,7 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
         "slug": slug,
         "country_code": cc,
         "country": geo["country"],
+        "thumbnail": next((e["thumbnail"] for e in enriched if e.get("thumbnail")), None),
         "hosts": enriched,
     }
 

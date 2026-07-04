@@ -458,6 +458,23 @@ class TestHostApiIntegration:
             f"DoodStream embed_url should be canonical dsvplay.com, got {dood_host}"
         )
 
+    # iteration 8: thumbnails
+    def test_embed_smiooaxb_returns_thumbnail(self):
+        r = requests.get(f"{API}/embed/SMioOAxb", timeout=30)
+        if r.status_code != 200:
+            pytest.skip("Seed mirror SMioOAxb not present")
+        data = r.json()
+        assert "thumbnail" in data, "top-level thumbnail key missing"
+        # top-level thumbnail should be set (comes from DoodStream splash_img)
+        assert data["thumbnail"] and isinstance(data["thumbnail"], str), data.get("thumbnail")
+        assert "doimg.net" in data["thumbnail"], data["thumbnail"]
+        by = {h["host_name"]: h for h in data["hosts"]}
+        dood = by.get("DoodStream")
+        assert dood is not None
+        assert dood.get("thumbnail"), "DoodStream host entry missing thumbnail"
+        assert "doimg.net" in dood["thumbnail"]
+
+
     def test_manual_check_uses_api_populates_title(self, admin_token):
         headers = {"Authorization": f"Bearer {admin_token}"}
         r = requests.get(f"{API}/mirrors", headers=headers)

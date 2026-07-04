@@ -1,18 +1,21 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
+import { useI18n } from "../context/I18nContext";
 import { ThemeToggle } from "./ThemeToggle";
+import { LanguageToggle } from "./LanguageToggle";
 import { LayoutDashboard, Shield, LogOut, Film, Plus } from "lucide-react";
 
 export const DashboardLayout = ({ children }) => {
   const { user, logout } = useAuth();
   const { settings } = useSettings();
+  const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
 
   const nav = [
-    { to: "/dashboard", label: "My Mirrors", icon: LayoutDashboard },
-    ...(user?.role === "admin" ? [{ to: "/admin", label: "Admin Panel", icon: Shield }] : []),
+    { to: "/dashboard", key: "my-mirrors", label: t("nav.myMirrors"), icon: LayoutDashboard },
+    ...(user?.role === "admin" ? [{ to: "/admin", key: "admin-panel", label: t("nav.adminPanel"), icon: Shield }] : []),
   ];
 
   const handleLogout = async () => {
@@ -28,7 +31,10 @@ export const DashboardLayout = ({ children }) => {
             <Film className="text-brand shrink-0" size={22} />
             <span className="font-display font-black text-lg tracking-tight truncate">{settings.site_name}</span>
           </Link>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <LanguageToggle />
+            <ThemeToggle />
+          </div>
         </div>
         <nav className="flex-1 p-4 space-y-1">
           {nav.map((n) => {
@@ -37,7 +43,7 @@ export const DashboardLayout = ({ children }) => {
               <Link
                 key={n.to}
                 to={n.to}
-                data-testid={`nav-${n.label.toLowerCase().replace(/\s+/g, "-")}`}
+                data-testid={`nav-${n.key}`}
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
                   active ? "bg-brand/10 text-brand" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
                 }`}
@@ -52,7 +58,7 @@ export const DashboardLayout = ({ children }) => {
             data-testid="nav-new-mirror"
             className="flex items-center gap-3 px-4 py-2.5 mt-4 rounded-md text-sm bg-brand text-black font-semibold hover:bg-brand-hover transition-colors"
           >
-            <Plus size={18} /> New Mirror
+            <Plus size={18} /> {t("nav.newMirror")}
           </Link>
         </nav>
         <div className="p-4 border-t border-border">
@@ -65,7 +71,7 @@ export const DashboardLayout = ({ children }) => {
             data-testid="logout-button"
             className="flex items-center gap-3 w-full px-4 py-2.5 rounded-md text-sm text-muted-foreground hover:text-offline hover:bg-secondary transition-colors"
           >
-            <LogOut size={18} /> Sign out
+            <LogOut size={18} /> {t("nav.signout")}
           </button>
         </div>
       </aside>

@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { faviconUrl } from "../lib/api";
+import { useI18n } from "../context/I18nContext";
 import { Wifi, WifiOff } from "lucide-react";
 
 export const VideoPlayer = ({ hosts, onHostView }) => {
+  const { t } = useI18n();
   const [active, setActive] = useState(0);
 
   useEffect(() => {
@@ -12,7 +14,7 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
   if (!hosts || hosts.length === 0) {
     return (
       <div className="aspect-video w-full flex items-center justify-center bg-black border border-border rounded-lg text-muted-foreground">
-        No streaming sources available.
+        {t("player.noSources")}
       </div>
     );
   }
@@ -66,8 +68,8 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
         {current.status === "offline" ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
             <WifiOff size={40} className="text-offline" />
-            <p className="text-white font-medium">This source is offline</p>
-            <p className="text-sm text-zinc-400">Please select another provider tab above.</p>
+            <p className="text-white font-medium">{t("player.offline")}</p>
+            <p className="text-sm text-zinc-400">{t("player.selectOther")}</p>
           </div>
         ) : (
           <iframe

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import api, { faviconUrl } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
+import { useI18n } from "../context/I18nContext";
 import {
   Film, Eye, Wifi, WifiOff, Plus, Copy, BarChart3, Pencil, Trash2, RefreshCw, ExternalLink, Clock,
 } from "lucide-react";
@@ -33,6 +34,7 @@ const StatusBadge = ({ status }) => {
 };
 
 export default function Dashboard() {
+  const { t } = useI18n();
   const [mirrors, setMirrors] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,13 +52,13 @@ export default function Dashboard() {
   const copyLink = (slug) => {
     const url = `${window.location.origin}/e/${slug}`;
     navigator.clipboard.writeText(url);
-    toast.success("Embed link copied to clipboard");
+    toast.success(t("dash.copied"));
   };
 
   const remove = async (id) => {
-    if (!window.confirm("Delete this mirror?")) return;
+    if (!window.confirm(t("dash.deleteConfirm"))) return;
     await api.delete(`/mirrors/${id}`);
-    toast.success("Mirror deleted");
+    toast.success(t("dash.deleted"));
     load();
   };
 
@@ -64,9 +66,9 @@ export default function Dashboard() {
     setChecking(id);
     try {
       await api.post(`/mirrors/${id}/check`);
-      toast.success("Availability checked");
+      toast.success(t("dash.checked"));
       await load();
-    } catch { toast.error("Check failed"); }
+    } catch { toast.error(t("dash.checkFailed")); }
     setChecking(null);
   };
 
@@ -75,32 +77,32 @@ export default function Dashboard() {
       <div className="p-8 max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="font-display font-black text-3xl">My Mirrors</h1>
-            <p className="text-muted-foreground mt-1">Manage your multi-host video mirrors.</p>
+            <h1 className="font-display font-black text-3xl">{t("nav.myMirrors")}</h1>
+            <p className="text-muted-foreground mt-1">{t("dash.subtitle")}</p>
           </div>
           <Link to="/dashboard/new" data-testid="create-mirror-button" className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
-            <Plus size={18} /> New Mirror
+            <Plus size={18} /> {t("nav.newMirror")}
           </Link>
         </div>
 
         {stats && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <StatCard icon={Film} label="Mirrors" value={stats.total_mirrors} />
-            <StatCard icon={Eye} label="Total Views" value={stats.total_views} />
-            <StatCard icon={Wifi} label="Online Links" value={stats.links_online} tone="online" />
-            <StatCard icon={WifiOff} label="Offline Links" value={stats.links_offline} tone="offline" />
+            <StatCard icon={Film} label={t("dash.stat.mirrors")} value={stats.total_mirrors} />
+            <StatCard icon={Eye} label={t("dash.stat.totalViews")} value={stats.total_views} />
+            <StatCard icon={Wifi} label={t("dash.stat.onlineLinks")} value={stats.links_online} tone="online" />
+            <StatCard icon={WifiOff} label={t("dash.stat.offlineLinks")} value={stats.links_offline} tone="offline" />
           </div>
         )}
 
         {loading ? (
-          <p className="text-muted-foreground font-mono">Loading…</p>
+          <p className="text-muted-foreground font-mono">{t("common.loading")}</p>
         ) : mirrors.length === 0 ? (
           <div className="bg-card border border-border rounded-lg p-12 text-center">
             <Film className="mx-auto text-muted-foreground mb-4" size={40} />
-            <p className="text-lg font-medium">No mirrors yet</p>
-            <p className="text-muted-foreground mt-1">Create your first mirror to generate a player link.</p>
+            <p className="text-lg font-medium">{t("dash.empty.title")}</p>
+            <p className="text-muted-foreground mt-1">{t("dash.empty.desc")}</p>
             <Link to="/dashboard/new" className="inline-flex items-center gap-2 mt-5 px-4 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
-              <Plus size={18} /> New Mirror
+              <Plus size={18} /> {t("nav.newMirror")}
             </Link>
           </div>
         ) : (
@@ -108,11 +110,17 @@ export default function Dashboard() {
             {mirrors.map((m) => (
               <div key={m.id} className="bg-card border border-border rounded-lg p-5 hover:border-brand/30 transition-colors">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="min-w-0">
+                  <div className="flex items-start gap-4 min-w-0">
+                    {(() => { const thumb = m.links.find((l) => l.thumbnail)?.thumbnail; return thumb ? (
+                      <img src={thumb} alt="" className="w-28 h-16 rounded-md object-cover border border-border shrink-0" onError={(e) => (e.currentTarget.style.display = "none")} />
+                    ) : (
+                      <div className="w-28 h-16 rounded-md bg-surface border border-border shrink-0 flex items-center justify-center"><Film size={20} className="text-muted-foreground" /></div>
+                    ); })()}
+                    <div className="min-w-0">
                     <h3 className="font-display font-bold text-lg truncate">{m.title}</h3>
                     <p className="text-xs text-muted-foreground font-mono mt-1">/e/{m.slug}</p>
                     <div className="flex items-center gap-3 mt-3 flex-wrap">
-                      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground"><Eye size={14} /> {m.views} views</span>
+                      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground"><Eye size={14} /> {m.views} {t("common.views")}</span>
                       {m.links.map((l) => (
                         <span key={l.host_id} className="inline-flex items-center gap-1.5 text-sm">
                           <img src={faviconUrl(l.host_domain)} alt="" width={14} height={14} onError={(e) => (e.currentTarget.style.display = "none")} />
@@ -121,14 +129,15 @@ export default function Dashboard() {
                         </span>
                       ))}
                     </div>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <a href={`/e/${m.slug}`} target="_blank" rel="noreferrer" data-testid={`open-player-${m.id}`} title="Open player" className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><ExternalLink size={18} /></a>
-                    <button onClick={() => copyLink(m.slug)} data-testid={`copy-link-${m.id}`} title="Copy embed link" className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Copy size={18} /></button>
-                    <button onClick={() => checkNow(m.id)} disabled={checking === m.id} data-testid={`check-mirror-${m.id}`} title="Check availability" className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><RefreshCw size={18} className={checking === m.id ? "animate-spin" : ""} /></button>
-                    <Link to={`/dashboard/stats/${m.id}`} data-testid={`stats-${m.id}`} title="Statistics" className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><BarChart3 size={18} /></Link>
-                    <Link to={`/dashboard/edit/${m.id}`} data-testid={`edit-${m.id}`} title="Edit" className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Pencil size={18} /></Link>
-                    <button onClick={() => remove(m.id)} data-testid={`delete-${m.id}`} title="Delete" className="p-2 rounded-md text-muted-foreground hover:text-offline hover:bg-secondary transition-colors"><Trash2 size={18} /></button>
+                    <a href={`/e/${m.slug}`} target="_blank" rel="noreferrer" data-testid={`open-player-${m.id}`} title={t("dash.tip.open")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><ExternalLink size={18} /></a>
+                    <button onClick={() => copyLink(m.slug)} data-testid={`copy-link-${m.id}`} title={t("dash.tip.copy")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Copy size={18} /></button>
+                    <button onClick={() => checkNow(m.id)} disabled={checking === m.id} data-testid={`check-mirror-${m.id}`} title={t("dash.tip.check")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><RefreshCw size={18} className={checking === m.id ? "animate-spin" : ""} /></button>
+                    <Link to={`/dashboard/stats/${m.id}`} data-testid={`stats-${m.id}`} title={t("dash.tip.stats")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><BarChart3 size={18} /></Link>
+                    <Link to={`/dashboard/edit/${m.id}`} data-testid={`edit-${m.id}`} title={t("dash.tip.edit")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Pencil size={18} /></Link>
+                    <button onClick={() => remove(m.id)} data-testid={`delete-${m.id}`} title={t("dash.tip.delete")} className="p-2 rounded-md text-muted-foreground hover:text-offline hover:bg-secondary transition-colors"><Trash2 size={18} /></button>
                   </div>
                 </div>
               </div>
