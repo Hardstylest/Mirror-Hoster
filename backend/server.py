@@ -135,15 +135,22 @@ def get_client_ip(request: Request) -> str:
         return xff.split(",")[0].strip()
     return request.client.host if request.client else "0.0.0.0"
 
+_geo_cache = {}
+
 def geolocate(ip: str) -> dict:
+    cached = _geo_cache.get(ip)
+    if cached and time.time() - cached[1] < 3600:
+        return cached[0]
+    result = {"country_code": "XX", "country": "Unknown"}
     try:
-        r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,countryCode,country", timeout=5)
+        r = requests.get(f"http://ip-api.com/json/{ip}?fields=status,countryCode,country", timeout=4)
         data = r.json()
         if data.get("status") == "success":
-            return {"country_code": data.get("countryCode", "XX"), "country": data.get("country", "Unknown")}
+            result = {"country_code": data.get("countryCode", "XX"), "country": data.get("country", "Unknown")}
     except Exception as e:
         logger.warning(f"Geolocation failed for {ip}: {e}")
-    return {"country_code": "XX", "country": "Unknown"}
+    _geo_cache[ip] = (result, time.time())
+    return result
 
 def rate_for_country(host: dict, country_code: str) -> float:
     for tier in host.get("tiers", []):
@@ -754,8 +761,6 @@ async def seed():
                                {"$set": {"api_provider": "doodstream"}})
     await db.hosts.update_many({"name": "VOE", "api_provider": {"$exists": False}},
                                {"$set": {"api_provider": "voe"}})
-    # Clear cached resolved_url so links re-resolve through the host APIs (new VOE domain etc.)
-    await db.mirrors.update_many({}, {"$unset": {"links.$[].resolved_url": ""}})
 
     cred = ROOT_DIR.parent / "memory" / "test_credentials.md"
     try:

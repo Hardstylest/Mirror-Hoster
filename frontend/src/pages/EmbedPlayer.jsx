@@ -60,7 +60,7 @@ export default function EmbedPlayer() {
 
         <AdSlot html={settings.ad_player_top} testid="ad-player-top" className="flex justify-center mb-4" />
 
-        <VideoPlayer hosts={data.hosts} onHostView={recordHostView} />
+        <VideoPlayer hosts={data.hosts} onHostView={recordHostView} poster={data.thumbnail} />
 
         <AdSlot html={settings.ad_player_bottom} testid="ad-player-bottom" className="flex justify-center mt-4" />
 

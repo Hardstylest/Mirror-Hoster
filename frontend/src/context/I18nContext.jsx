@@ -151,6 +151,7 @@ const translations = {
     "player.offline": "This source is offline",
     "player.selectOther": "Please select another provider tab above.",
     "player.noSources": "No streaming sources available.",
+    "player.clickToPlay": "Click to play",
   },
   de: {
     "nav.signin": "Anmelden",
@@ -294,6 +295,7 @@ const translations = {
     "player.offline": "Diese Quelle ist offline",
     "player.selectOther": "Bitte wähle oben einen anderen Anbieter-Tab.",
     "player.noSources": "Keine Streaming-Quellen verfügbar.",
+    "player.clickToPlay": "Zum Abspielen klicken",
   },
 };
 

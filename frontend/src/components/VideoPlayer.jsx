@@ -1,14 +1,16 @@
 import { useState, useEffect } from "react";
 import { faviconUrl } from "../lib/api";
 import { useI18n } from "../context/I18nContext";
-import { Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff, Play } from "lucide-react";
 
-export const VideoPlayer = ({ hosts, onHostView }) => {
+export const VideoPlayer = ({ hosts, onHostView, poster }) => {
   const { t } = useI18n();
   const [active, setActive] = useState(0);
+  const [started, setStarted] = useState(false);
 
   useEffect(() => {
     setActive(0);
+    setStarted(false);
   }, [hosts]);
 
   if (!hosts || hosts.length === 0) {
@@ -23,7 +25,12 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
 
   const select = (i) => {
     setActive(i);
-    if (onHostView && hosts[i]) onHostView(hosts[i].host_id);
+    if (started && onHostView && hosts[i]) onHostView(hosts[i].host_id);
+  };
+
+  const play = () => {
+    setStarted(true);
+    if (onHostView && current) onHostView(current.host_id);
   };
 
   return (
@@ -71,7 +78,7 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
             <p className="text-white font-medium">{t("player.offline")}</p>
             <p className="text-sm text-zinc-400">{t("player.selectOther")}</p>
           </div>
-        ) : (
+        ) : started ? (
           <iframe
             key={current.embed_url}
             src={current.embed_url}
@@ -83,6 +90,27 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             referrerPolicy="no-referrer"
           />
+        ) : (
+          /* Click-to-play poster: the host iframe (and its ads/pop-ups) only loads on click */
+          <button
+            onClick={play}
+            data-testid="play-overlay"
+            className="group absolute inset-0 w-full h-full flex items-center justify-center"
+          >
+            {poster && (
+              <img src={poster} alt="" className="absolute inset-0 w-full h-full object-cover opacity-60" onError={(e) => (e.currentTarget.style.display = "none")} />
+            )}
+            <span className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/30 to-black/50" />
+            <span className="relative flex flex-col items-center gap-3">
+              <span className="w-20 h-20 rounded-full bg-brand/90 flex items-center justify-center shadow-2xl transition-transform duration-300 group-hover:scale-110">
+                <Play size={34} className="text-black ml-1" fill="currentColor" />
+              </span>
+              <span className="text-white font-medium text-sm drop-shadow flex items-center gap-2">
+                <img src={faviconUrl(current.host_domain)} alt="" width={16} height={16} className="rounded-sm" onError={(e) => (e.currentTarget.style.display = "none")} />
+                {t("player.clickToPlay")}
+              </span>
+            </span>
+          </button>
         )}
       </div>
     </div>
