@@ -149,11 +149,12 @@ def rate_for_country(host: dict, country_code: str) -> float:
             return float(tier["rate"])
     return float(host.get("default_rate", 0))
 
-def check_url_status(url: str) -> str:
-    """Returns 'online', 'offline', or 'unknown'.
+def probe_url(url: str):
+    """Returns (status, final_url). status in 'online'/'offline'/'unknown'.
     Video hosts (Doodstream/VOE) sit behind Cloudflare/DDoS-Guard and return 403
     challenge pages to bots even when the video is live. We must NOT treat those as
     offline. Only definitive signals (404/410 or explicit not-found text) mean offline.
+    final_url is the URL after following redirects (e.g. dsvplay.com -> playmogo.com).
     """
     try:
         headers = {
@@ -163,26 +164,29 @@ def check_url_status(url: str) -> str:
             "Accept-Language": "en-US,en;q=0.9",
         }
         r = requests.get(url, timeout=10, headers=headers, allow_redirects=True)
+        final_url = str(r.url) or url
         code = r.status_code
         if code in (404, 410):
-            return "offline"
+            return "offline", final_url
         body = r.text.lower()[:40000]
         challenge = ["just a moment", "ddos-guard", "checking your browser",
                      "cf-browser-verification", "attention required", "enable javascript and cookies"]
         if any(x in body for x in challenge):
-            return "unknown"
+            return "unknown", final_url
         if code == 200:
             not_found = ["file you are looking for", "file not found", "video not found",
                          "video has been deleted", "file has been removed", "no longer available",
                          "this video is unavailable", "404 not found", "file was deleted",
                          "video is unavailable"]
             if any(m in body for m in not_found):
-                return "offline"
-            return "online"
+                return "offline", final_url
+            return "online", final_url
         # 403/429/503/5xx and anything else -> can't determine (assume protected/live)
-        return "unknown"
+        return "unknown", final_url
     except Exception:
-        return "unknown"
+        return "unknown", url
+
+
 
 def normalize_embed_url(url: str) -> str:
     """Convert a pasted host URL into its /e/ embed form.
@@ -389,8 +393,9 @@ async def check_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Not allowed")
     links = m.get("links", [])
     for l in links:
-        result = await asyncio.to_thread(check_url_status, l["embed_url"])
+        result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
         l["status"] = "online" if result == "unknown" else result
+        l["resolved_url"] = final_url
         l["last_checked"] = now_iso()
     await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": links}})
     updated = await db.mirrors.find_one({"id": mirror_id})
@@ -418,6 +423,17 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
     async for h in db.hosts.find({"id": {"$in": host_ids}}):
         hosts[h["id"]] = h
 
+    # Resolve any links that don't yet have a resolved (final redirect) url,
+    # so the iframe points at the live host domain (e.g. dsvplay.com -> playmogo.com).
+    resolved_changed = False
+    for l in m.get("links", []):
+        if not l.get("resolved_url"):
+            _, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
+            l["resolved_url"] = final_url
+            resolved_changed = True
+    if resolved_changed:
+        await db.mirrors.update_one({"slug": slug}, {"$set": {"links": m["links"]}})
+
     enriched = []
     for l in m.get("links", []):
         h = hosts.get(l["host_id"])
@@ -427,7 +443,7 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
             "host_id": l["host_id"],
             "host_name": h["name"],
             "host_domain": h["domain"],
-            "embed_url": l["embed_url"],
+            "embed_url": l.get("resolved_url") or l["embed_url"],
             "status": l.get("status", "pending"),
             "rate": rate_for_country(h, cc),
         })
@@ -642,8 +658,9 @@ async def offline_checker():
                 links = m.get("links", [])
                 changed = False
                 for l in links:
-                    result = await asyncio.to_thread(check_url_status, l["embed_url"])
+                    result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
                     l["status"] = "online" if result == "unknown" else result
+                    l["resolved_url"] = final_url
                     l["last_checked"] = now_iso()
                     changed = True
                 if changed:

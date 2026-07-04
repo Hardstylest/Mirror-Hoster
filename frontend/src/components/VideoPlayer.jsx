@@ -79,7 +79,7 @@ export const VideoPlayer = ({ hosts, onHostView }) => {
             scrolling="no"
             allowFullScreen
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-            referrerPolicy="origin"
+            referrerPolicy="no-referrer"
           />
         )}
       </div>

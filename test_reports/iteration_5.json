@@ -1,0 +1,21 @@
+{
+  "summary": "Iteration 5 validates live-domain resolution for host embed iframes. Backend: 28/28 pytest pass (added TestResolvedUrl class - 3 new cases). GET /api/embed/SMioOAxb returns DoodStream embed_url on the resolved live domain (playmogo.com/e/9bvi9u4wu0j1), NOT the stored dsvplay.com stub. Creating a new mirror with 'https://dsvplay.com/d/ysledj039kb4' is (a) normalized on save to 'https://dsvplay.com/e/ysledj039kb4', and (b) after the first /embed hit, resolved_url is persisted on the mirror doc and served as embed_url ('/e/ysledj039kb4' on the resolved live domain, dsvplay.com removed). POST /api/mirrors/<id>/check also stores resolved_url and returns status=online for the Cloudflare-protected host. Regressions all green: URL normalization (/d, /embed, bare id, query preserved, unknown multi-segment untouched), Cloudflare 403 not marked offline while genuine 404 still offline, ES/US geo-ordering unchanged, admin login + CRUD unchanged, site settings unchanged.\n\nFrontend: On /e/SMioOAxb the iframe attributes are correct: referrerPolicy='no-referrer', sandbox attribute NOT present, allowFullScreen=true, allow='autoplay; encrypted-media; fullscreen; picture-in-picture'. Clicking host-tab-doodstream flips iframe src to 'https://playmogo.com/e/9bvi9u4wu0j1' (resolved live domain). Clicking host-tab-voe flips back to 'https://voe.sx/e/rjseg1wmsyv6'. All attributes preserved across tab switches.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py get_embed(): resolve-on-demand loop calls probe_url synchronously in thread pool for each link that lacks resolved_url. First-time public viewers of a fresh mirror will experience ~10s latency per unresolved link. Consider background pre-resolve on create_mirror to avoid blocking the initial /embed request, or return the unresolved URL immediately and resolve asynchronously.",
+    "server.py probe_url(): status='unknown' for 403 challenge pages is correct, but final_url returned by requests when the challenge redirects may in some cases still be the intermediate host (e.g. if Cloudflare interstitial is served on the pre-redirect domain). Currently working for dsvplay.com->playmogo.com because dsvplay issues an HTTP redirect BEFORE the CF challenge; document this assumption.",
+    "server.py check_mirror + get_embed both mutate `l` in place and $set the whole links array — safe here since single-writer per mirror, but could race with the background offline_checker. Low risk for MVP.",
+    "No test coverage for concurrent /embed hits on an unresolved mirror (potential duplicate probe requests). Acceptable for MVP."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (28/28)", "frontend": "100% - iframe attrs + tab switching + live-domain resolution verified"},
+  "test_credentials": "admin@mirrorstream.com / Admin@1234 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Created TEST_ResolveLive and TEST_CheckResolved mirrors inside TestResolvedUrl; both deleted in finally blocks. Seeded mirrors SMioOAxb and -B7RoZcD preserved.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 5: probe_url returns (status, final_url); resolved_url persisted on /check and lazily on /embed. Frontend iframe uses referrerPolicy='no-referrer', no sandbox. DoodStream dsvplay.com/d/ysledj039kb4 resolves to playmogo.com/e/9bvi9u4wu0j1. All 28 backend tests + frontend iframe/tab-switch checks pass.",
+  "rca of the issue": "N/A - feature working. Behavior: (1) probe_url follows redirects and returns final_url (dsvplay.com HTTP-redirects to playmogo.com before serving Cloudflare challenge); (2) check_mirror stores final_url as resolved_url; (3) get_embed lazily resolves unresolved links on first hit and persists; (4) response embed_url = resolved_url or original; (5) iframe uses referrerPolicy=no-referrer without sandbox so playmogo.com receives no Referer header and no framing sandbox."
+}

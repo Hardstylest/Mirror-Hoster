@@ -345,6 +345,88 @@ class TestNormalization:
             requests.delete(f"{API}/mirrors/{mid}", headers=headers)
 
 
+# ---- Resolved URL / Embed live-domain resolution (iteration 5) ----
+class TestResolvedUrl:
+    """/embed must resolve DoodStream links to their final redirect domain
+    (e.g. dsvplay.com -> playmogo.com) and persist the resolved_url."""
+
+    def test_embed_smiooaxb_returns_resolved_doodstream_domain(self):
+        r = requests.get(f"{API}/embed/SMioOAxb", timeout=30)
+        if r.status_code != 200:
+            pytest.skip("Seed mirror SMioOAxb not present")
+        data = r.json()
+        dood = next((h for h in data["hosts"] if h["host_name"] == "DoodStream"), None)
+        assert dood is not None, data
+        # must be /e/ form and resolved live domain
+        assert "/e/" in dood["embed_url"], dood
+        # dsvplay.com is the source; playmogo.com is a known live redirect target.
+        # We assert the domain is NOT the stored dsvplay.com stub (i.e. was resolved).
+        assert "dsvplay.com" not in dood["embed_url"], (
+            f"embed_url still points at unresolved dsvplay stub: {dood['embed_url']}"
+        )
+
+    def test_create_new_mirror_resolves_and_persists(self, admin_token, hosts):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        dood = next(x for x in hosts if x["name"] == "DoodStream")
+        payload = {
+            "title": "TEST_ResolveLive",
+            "description": "resolve dsvplay->playmogo",
+            "links": [
+                {"host_id": dood["id"], "embed_url": "https://dsvplay.com/d/ysledj039kb4"},
+            ],
+        }
+        r = requests.post(f"{API}/mirrors", json=payload, headers=headers)
+        assert r.status_code == 200, r.text
+        m = r.json()
+        mid = m["id"]
+        slug = m["slug"]
+        try:
+            # 1) URL normalization: /d/ -> /e/
+            assert m["links"][0]["embed_url"] == "https://dsvplay.com/e/ysledj039kb4", m["links"]
+
+            # 2) Trigger /embed -> should resolve live domain
+            r = requests.get(f"{API}/embed/{slug}", timeout=30)
+            assert r.status_code == 200, r.text
+            data = r.json()
+            embed_url = data["hosts"][0]["embed_url"]
+            assert "/e/ysledj039kb4" in embed_url, embed_url
+            assert "dsvplay.com" not in embed_url, (
+                f"resolved URL should differ from source dsvplay.com: {embed_url}"
+            )
+
+            # 3) Confirm resolved_url persisted on the doc
+            r = requests.get(f"{API}/mirrors/{mid}",
+                             headers=headers)
+            assert r.status_code == 200, r.text
+            doc = r.json()
+            link = doc["links"][0]
+            assert link.get("resolved_url"), f"resolved_url not persisted: {link}"
+            assert "dsvplay.com" not in link["resolved_url"], link["resolved_url"]
+        finally:
+            requests.delete(f"{API}/mirrors/{mid}", headers=headers)
+
+    def test_check_endpoint_stores_resolved_url(self, admin_token, hosts):
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        dood = next(x for x in hosts if x["name"] == "DoodStream")
+        payload = {
+            "title": "TEST_CheckResolved",
+            "description": "verify /check persists resolved_url",
+            "links": [{"host_id": dood["id"], "embed_url": "https://dsvplay.com/e/ysledj039kb4"}],
+        }
+        r = requests.post(f"{API}/mirrors", json=payload, headers=headers)
+        assert r.status_code == 200, r.text
+        mid = r.json()["id"]
+        try:
+            r = requests.post(f"{API}/mirrors/{mid}/check", headers=headers, timeout=60)
+            assert r.status_code == 200, r.text
+            link = r.json()["links"][0]
+            assert link.get("resolved_url"), f"resolved_url missing after /check: {link}"
+            assert "dsvplay.com" not in link["resolved_url"], link["resolved_url"]
+            assert link["status"] == "online"
+        finally:
+            requests.delete(f"{API}/mirrors/{mid}", headers=headers)
+
+
 # ---- Site Settings ----
 class TestSiteSettings:
     def test_get_settings_public_no_auth(self):
