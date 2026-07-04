@@ -1,0 +1,126 @@
+{
+  "project_context": {
+    "domain": "SaaS Media Tech / Streaming Hub",
+    "theme": "Dark Theme",
+    "archetype": "Archetype 4 (Swiss & High-Contrast) modified for Dark Mode",
+    "core_aesthetic": "Sleek, cinematic media dashboard. Deep dark background minimizes distraction so the primary Cyan (#48C7F2) accents and video player can dominate the visual hierarchy. Precision-driven, zero-muddy gradients."
+  },
+  "typography": {
+    "strategy": "Swiss Brutalist (Tech/Art) - radical weight contrast.",
+    "fonts": {
+      "headings": {
+        "family": "Cabinet Grotesk",
+        "fallback": "sans-serif",
+        "description": "Punchy, modern grotesque for dashboard metrics and landing page headers. Never use Inter or Roboto for headers."
+      },
+      "body": {
+        "family": "IBM Plex Sans",
+        "fallback": "sans-serif",
+        "description": "Sterile, highly readable sans for dense dashboard data, tables, and tabs."
+      },
+      "monospace": {
+        "family": "JetBrains Mono",
+        "fallback": "monospace",
+        "description": "Used for embed codes, technical IDs, and IPs."
+      }
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight font-black",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl font-bold",
+      "h4": "text-lg sm:text-xl font-semibold",
+      "body": "text-base leading-relaxed text-slate-300",
+      "small": "text-sm text-slate-400",
+      "overline": "text-xs uppercase tracking-[0.2em] font-semibold text-cyan-400"
+    }
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#48C7F2",
+      "foreground": "#050505",
+      "hover": "#6BD3F4"
+    },
+    "background": {
+      "DEFAULT": "#050505",
+      "description": "Obsidian black. Never pure #000000; slight blue tint."
+    },
+    "surface": {
+      "card": "#0F0F12",
+      "card_hover": "#17171C",
+      "player_tab_active": "#1C1C21",
+      "player_tab_inactive": "#0A0A0C"
+    },
+    "border": {
+      "DEFAULT": "#222228",
+      "focus": "#48C7F2"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    },
+    "status": {
+      "online": "#10B981",
+      "offline": "#EF4444",
+      "pending": "#F59E0B"
+    }
+  },
+  "spacing_and_layout": {
+    "dashboard": {
+      "grid": "Control Room Grid (Dense). grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+      "padding": "p-6 to p-8 for internal cards",
+      "radius": "rounded-lg (Max 8px for a sharp, tech-forward look. No overly bubbly corners)."
+    },
+    "public_player": {
+      "container": "Max-width optimized for 16:9 video ratio.",
+      "tabs": "Browser-style tabs. Tightly packed, sharp corners at the top, bordering directly onto the video player frame to mimic an active browser window."
+    }
+  },
+  "components": {
+    "player_tabs": {
+      "style": "Neumorphic/Tactile hybrid but hard-edged. Active tab gets background #1C1C21 with a top 2px solid border in Primary Cyan (#48C7F2). Inactive tabs are darker (#0A0A0C) with lowered text opacity. Must include 16x16px favicons.",
+      "favicon_api": "Use https://www.google.com/s2/favicons?domain={domain}&sz=64 for dynamic favicons based on hosters (e.g., doodstream.com, voe.sx)."
+    },
+    "buttons": {
+      "primary": "bg-[#48C7F2] text-[#050505] font-semibold rounded hover:bg-[#6BD3F4] transition-colors focus:ring-2 focus:ring-[#48C7F2] focus:ring-offset-2 focus:ring-offset-[#050505]",
+      "secondary": "bg-[#17171C] text-white border border-[#222228] hover:border-[#48C7F2] transition-colors",
+      "danger": "bg-transparent text-[#EF4444] border border-[#EF4444] hover:bg-[#EF4444] hover:text-white transition-colors"
+    },
+    "cards": {
+      "default": "bg-[#0F0F12] border border-[#222228] rounded-lg p-6 shadow-sm",
+      "hover_effect": "hover:-translate-y-1 hover:shadow-[0_8px_30px_rgba(72,199,242,0.1)] hover:border-[#48C7F2]/30 transition-all duration-300"
+    },
+    "forms": {
+      "inputs": "bg-[#0A0A0C] border border-[#222228] rounded focus:border-[#48C7F2] focus:ring-1 focus:ring-[#48C7F2] text-white placeholder-zinc-600 px-4 py-2"
+    },
+    "charts": {
+      "library": "recharts",
+      "styling": "Dark mode tailored. Tooltips must have bg-[#0F0F12] and border-[#222228]. Line/Bar color should use #48C7F2."
+    }
+  },
+  "interactions_and_motion": {
+    "transitions": "transition-all duration-200 ease-in-out",
+    "hover_states": "All interactive elements MUST explicitly set text/bg color on hover (e.g. hover:text-white). Focus states must have higher contrast.",
+    "tab_switch": "Instant snap for video tab switching to feel responsive and native."
+  },
+  "testing": {
+    "data_testid_rules": "All interactive elements MUST include data-testid. Format: kebab-case, role-based. Examples: 'login-submit-button', 'host-tab-doodstream', 'embed-link-input', 'copy-clipboard-button'."
+  },
+  "icons_and_assets": {
+    "icon_library": "@phosphor-icons/react",
+    "icon_style": "Use 'duotone' or 'regular' weight for dashboard tools.",
+    "images": {
+      "auth_background": "https://images.unsplash.com/photo-1655841439659-0afc60676b70?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTN8MHwxfHNlYXJjaHwzfHxhYnN0cmFjdCUyMGRhcmslMjBkaWdpdGFsJTIwY3lhbnxlbnwwfHx8fDE3ODMxNTI3OTN8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Dark teal wavy shapes on black. Used for the authentication page right-side panel to contrast with the dark sleek form."
+    }
+  },
+  "instructions_to_main_agent": {
+    "1": "Use React Router for navigation. Setup User Dashboard, Admin Dashboard, and a Public Player Route.",
+    "2": "Create a reusable 'BrowserTabs' component for the public player that takes a list of hosts, fetches their favicons via the Google Favicon API, and sets the highest paying host as default.",
+    "3": "For the Admin dashboard, include a section to manage 'Per-Country Earning Rates' (mock data with table).",
+    "4": "The embed link creation form must accept multiple text inputs (one per supported host) and generate a single ListMirror-style embed URL.",
+    "5": "Do not use .tsx files. Use .js and .jsx extensions.",
+    "6": "Use Recharts for the statistics page showing views over time.",
+    "7": "Do not use generic gray gradients. Keep backgrounds solid Obsidian/Card colors with precise 1px borders."
+  }
+}
