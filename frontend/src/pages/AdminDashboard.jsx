@@ -296,6 +296,7 @@ export default function AdminDashboard() {
   const [adminSettings, setAdminSettings] = useState({});
   const [backupBusy, setBackupBusy] = useState("");
   const [restorePw, setRestorePw] = useState("");
+  const [verifyPw, setVerifyPw] = useState("");
   const restoreRef = useRef(null);
 
   const downloadBackup = async () => {
@@ -318,6 +319,22 @@ export default function AdminDashboard() {
     try {
       const { data } = await api.post("/admin/backup/test-opendrive");
       data.ok ? toast.success(data.message) : toast.error(data.message);
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Fehler"); }
+    setBackupBusy("");
+  };
+
+  const verifyBackupPw = async () => {
+    setBackupBusy("verify");
+    try {
+      const fd = new FormData();
+      fd.append("password", verifyPw || "");
+      const { data } = await api.post("/admin/backup/verify-password", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      data.ok ? toast.success(lang === "de" ? "Passwort stimmt mit dem gespeicherten Backup-Passwort überein." : data.message)
+              : toast.error(lang === "de"
+                  ? (data.message.includes("No backup") ? "Es ist noch kein Backup-Passwort gespeichert. Bitte zuerst speichern."
+                     : data.message.includes("enter a password") ? "Bitte ein Passwort zum Prüfen eingeben."
+                     : "Passwort stimmt NICHT mit dem gespeicherten Backup-Passwort überein.")
+                  : data.message);
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Fehler"); }
     setBackupBusy("");
   };
@@ -938,6 +955,23 @@ export default function AdminDashboard() {
                       onChange={(e) => setSiteForm({ ...siteForm, backup_password: e.target.value })}
                       placeholder={adminSettings.has_backup_password ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : (lang === "de" ? "Starkes Passwort wählen" : "Choose a strong password")}
                       className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono focus:border-brand outline-none" />
+                  </div>
+                )}
+                {siteForm.backup_encrypt && adminSettings.has_backup_password && (
+                  <div className="rounded-md border border-border bg-surface/50 p-3 space-y-2" data-testid="verify-pw-box">
+                    <label className="text-sm text-muted-foreground">
+                      {lang === "de" ? "Gespeichertes Passwort prüfen (bevor es ernst wird)" : "Verify the stored password (before it matters)"}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <input data-testid="verify-password" type="password" value={verifyPw} autoComplete="new-password"
+                        onChange={(e) => setVerifyPw(e.target.value)}
+                        placeholder={lang === "de" ? "Passwort eingeben" : "Enter password"}
+                        className="flex-1 min-w-[180px] bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono focus:border-brand outline-none" />
+                      <button onClick={verifyBackupPw} disabled={!!backupBusy || !verifyPw} data-testid="verify-password-button"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border hover:border-brand hover:text-brand disabled:opacity-50 transition-colors">
+                        <KeyRound size={16} /> {backupBusy === "verify" ? "…" : (lang === "de" ? "Passwort prüfen" : "Verify password")}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

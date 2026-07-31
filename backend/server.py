@@ -2120,6 +2120,35 @@ async def backup_test_opendrive(admin: dict = Depends(get_admin_user)):
         logger.warning(f"opendrive test failed: {type(e).__name__}")
         return {"ok": False, "message": "Login failed. Check username/password."}
 
+@api_router.post("/admin/backup/verify-password")
+async def backup_verify_password(password: str = Form(""), admin: dict = Depends(get_admin_user)):
+    """Confirms the entered password matches the stored backup password by encrypting a
+    tiny test ZIP with the STORED password and decrypting it with the ENTERED one."""
+    s = await db.settings.find_one({"key": "site"}) or {}
+    stored = s.get("backup_password") or ""
+    if not stored:
+        return {"ok": False, "message": "No backup password is stored yet. Save one first."}
+    if not password:
+        return {"ok": False, "message": "Please enter a password to check."}
+
+    def _check():
+        buf = io.BytesIO()
+        with pyzipper.AESZipFile(buf, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as z:
+            z.setpassword(stored.encode("utf-8"))
+            z.writestr("check.txt", b"ok")
+        buf.seek(0)
+        with pyzipper.AESZipFile(buf) as z:
+            z.setpassword(password.encode("utf-8"))
+            try:
+                return z.read("check.txt") == b"ok"
+            except RuntimeError:
+                return False
+
+    match = await asyncio.to_thread(_check)
+    return {"ok": bool(match),
+            "message": "Password matches the stored backup password." if match
+                       else "Password does NOT match the stored backup password."}
+
 @api_router.post("/admin/backup/restore")
 async def backup_restore(file: UploadFile = File(...), password: str = Form(""), admin: dict = Depends(get_admin_user)):
     raw = await file.read()

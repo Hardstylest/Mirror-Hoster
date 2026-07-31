@@ -100,6 +100,7 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Betrifft ALLE Backup-Wege: `GET /admin/backup/download`, `POST /admin/backup/run` (OpenDrive) und `backup_scheduler`. `backup_run` bricht mit 400 ab, wenn Verschlüsselung an ist aber kein Passwort gesetzt.
 - **Restore**: `POST /admin/backup/restore` akzeptiert ein optionales `password`-Formfeld (UI: Passwortfeld unter dem Datei-Upload). Erkennt verschlüsselte ZIPs und liefert klare Fehler (kein PW / falsches PW → 400). Unverschlüsselte Backups funktionieren unverändert weiter.
 - Verifiziert (curl/pyzipper + Screenshot): ZIP nicht ohne PW lesbar, Restore ohne PW→400, falsches PW→400, korrektes PW→200 (9 Collections), unverschlüsselter Download+Restore ok, UI rendert korrekt. Test-Passwort danach aus DB entfernt.
+- **„Passwort prüfen"-Button**: `POST /admin/backup/verify-password` (Form `password`) verschlüsselt ein Test-ZIP mit dem GESPEICHERTEN Passwort und entschlüsselt es mit dem EINGEGEBENEN → bestätigt Übereinstimmung, bevor es ernst wird. UI im Verschlüsselungs-Bereich (nur wenn Passwort gespeichert), Toast grün/rot. Getestet: kein-PW-gespeichert/korrekt/falsch/leer + UI-Screenshot (grüner Erfolg-Toast).
 
 ## Backlog / Next
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
