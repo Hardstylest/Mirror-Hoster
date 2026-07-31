@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import api, { faviconUrl } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
-import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench } from "lucide-react";
+import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench, History } from "lucide-react";
 
 const fmtDate = (iso) => {
   if (!iso) return null;
@@ -24,13 +24,15 @@ export default function OfflineStreams() {
   const [fixing, setFixing] = useState(null);
   const [recheckingAll, setRecheckingAll] = useState(false);
   const [bulkFixing, setBulkFixing] = useState(false);
+  const [logs, setLogs] = useState([]);
 
   const load = useCallback(async () => {
-    const [m, h] = await Promise.all([api.get("/mirrors"), api.get("/hosts")]);
+    const [m, h, fl] = await Promise.all([api.get("/mirrors"), api.get("/hosts"), api.get("/fix-logs")]);
     setMirrors(m.data);
     const pm = {};
     h.data.forEach((x) => { pm[x.id] = { provider: x.api_provider, has_login: x.has_login }; });
     setHostMap(pm);
+    setLogs(fl.data);
     setLoading(false);
     window.dispatchEvent(new Event("offline-updated"));
   }, []);
@@ -184,6 +186,27 @@ export default function OfflineStreams() {
             ))}
           </div>
         )}
+
+        <div className="mt-10" data-testid="fix-history">
+          <h2 className="font-display font-bold text-xl flex items-center gap-2 mb-4">
+            <History size={20} className="text-brand" /> {t("offline.history")}
+          </h2>
+          {logs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("offline.historyEmpty")}</p>
+          ) : (
+            <div className="bg-card border border-border rounded-lg divide-y divide-border">
+              {logs.map((l) => (
+                <div key={l.id} className="flex items-center gap-3 px-4 py-3 text-sm" data-testid={`fix-log-${l.id}`}>
+                  <CheckCircle2 size={16} className="text-online shrink-0" />
+                  <span className="font-medium truncate">{l.mirror_title}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground">{l.host_name}</span>
+                  <a href={l.new_url} target="_blank" rel="noreferrer" className="text-xs text-brand hover:underline truncate max-w-[220px]">{l.new_url}</a>
+                  <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">{fmtDate(l.created_at)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </DashboardLayout>
   );

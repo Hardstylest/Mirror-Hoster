@@ -41,7 +41,16 @@ def user_creds():
     r = requests.post(f"{API}/auth/register", json={"name": "Test User", "email": email, "password": password})
     assert r.status_code == 200, f"register failed: {r.status_code} {r.text}"
     data = r.json()
-    return {"email": email, "password": password, "token": data["access_token"], "id": data["user"]["id"]}
+    creds = {"email": email, "password": password, "token": data["access_token"], "id": data["user"]["id"]}
+    yield creds
+    admin_login = requests.post(
+        f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+    )
+    if admin_login.status_code == 200:
+        requests.delete(
+            f"{API}/admin/users/{creds['id']}",
+            headers={"Authorization": f"Bearer {admin_login.json()['access_token']}"},
+        )
 
 
 @pytest.fixture(scope="session")
@@ -942,7 +951,7 @@ class TestTierRefreshAndAutoFix:
                 f"{API}/mirrors/{mirror_id}/autofix/{firestream['id']}", headers=headers
             )
             assert response.status_code == 400, response.text
-            assert response.json()["detail"] == "Auto-fix is not supported for this host"
+            assert response.json()["detail"] == "FireStream login not configured"
         finally:
             delete_response = requests.delete(f"{API}/mirrors/{mirror_id}", headers=headers)
             assert delete_response.status_code == 200, delete_response.text
@@ -979,3 +988,254 @@ class TestTierRefreshAndAutoFix:
                 f"{API}/mirrors/{mirror_id}", headers=admin_headers
             )
             assert delete_response.status_code == 200, delete_response.text
+
+
+# ---- Admin user management + fix history (iteration 12) ----
+class TestAdminUserManagementAndFixLogs:
+    """Create/reset/search-support APIs, role/delete regression, and fix-log visibility."""
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"}
+
+    @staticmethod
+    def _create_admin_managed_user(admin_token, role="user"):
+        unique = uuid.uuid4().hex[:10]
+        payload = {
+            "name": f"TEST_AdminManaged_{unique}",
+            "email": f"TEST_admin_managed_{unique}@example.com",
+            "password": "OldPass@123",
+            "role": role,
+        }
+        response = requests.post(
+            f"{API}/admin/users",
+            json=payload,
+            headers=TestAdminUserManagementAndFixLogs._headers(admin_token),
+        )
+        assert response.status_code in (200, 201), response.text
+        return payload, response.json()
+
+    @staticmethod
+    def _delete_user(admin_token, user_id):
+        response = requests.delete(
+            f"{API}/admin/users/{user_id}",
+            headers=TestAdminUserManagementAndFixLogs._headers(admin_token),
+        )
+        assert response.status_code in (200, 404), response.text
+
+    def test_admin_create_admin_user_login_duplicate_and_no_hash(self, admin_token):
+        payload, created = self._create_admin_managed_user(admin_token, role="admin")
+        user_id = created["id"]
+        try:
+            assert created["name"] == payload["name"]
+            assert created["email"] == payload["email"].lower()
+            assert created["role"] == "admin"
+            assert isinstance(user_id, str) and user_id
+            assert "password" not in created and "password_hash" not in created
+
+            login = requests.post(
+                f"{API}/auth/login",
+                json={"email": payload["email"], "password": payload["password"]},
+            )
+            assert login.status_code == 200, login.text
+            assert login.json()["user"]["role"] == "admin"
+            assert login.json()["user"]["id"] == user_id
+
+            duplicate = requests.post(
+                f"{API}/admin/users",
+                json=payload,
+                headers=self._headers(admin_token),
+            )
+            assert duplicate.status_code == 400, duplicate.text
+            assert duplicate.json()["detail"] == "Email already registered"
+
+            listed = requests.get(
+                f"{API}/admin/users", headers=self._headers(admin_token)
+            )
+            persisted = next(user for user in listed.json() if user["id"] == user_id)
+            assert persisted["email"] == payload["email"].lower()
+            assert persisted["role"] == "admin"
+            assert "password_hash" not in persisted
+        finally:
+            self._delete_user(admin_token, user_id)
+
+    def test_non_admin_cannot_create_user(self, user_creds):
+        response = requests.post(
+            f"{API}/admin/users",
+            json={
+                "name": "TEST_Forbidden",
+                "email": f"TEST_forbidden_{uuid.uuid4().hex[:8]}@example.com",
+                "password": "TestPass@123",
+                "role": "user",
+            },
+            headers=self._headers(user_creds["token"]),
+        )
+        assert response.status_code == 403, response.text
+        assert response.json()["detail"] == "Admin access required"
+
+    def test_admin_password_reset_new_works_old_fails_and_short_rejected(self, admin_token):
+        payload, created = self._create_admin_managed_user(admin_token)
+        user_id = created["id"]
+        new_password = "NewPass@456"
+        try:
+            reset = requests.put(
+                f"{API}/admin/users/{user_id}/password",
+                json={"password": new_password},
+                headers=self._headers(admin_token),
+            )
+            assert reset.status_code == 200, reset.text
+            assert reset.json() == {"ok": True}
+
+            old_login = requests.post(
+                f"{API}/auth/login",
+                json={"email": payload["email"], "password": payload["password"]},
+            )
+            assert old_login.status_code == 401, old_login.text
+            assert old_login.json()["detail"] == "Invalid email or password"
+
+            new_login = requests.post(
+                f"{API}/auth/login",
+                json={"email": payload["email"], "password": new_password},
+            )
+            assert new_login.status_code == 200, new_login.text
+            assert new_login.json()["user"]["id"] == user_id
+
+            short = requests.put(
+                f"{API}/admin/users/{user_id}/password",
+                json={"password": "12345"},
+                headers=self._headers(admin_token),
+            )
+            assert short.status_code == 422, short.text
+            detail = short.json()["detail"]
+            assert isinstance(detail, list) and detail[0]["type"] == "string_too_short"
+        finally:
+            self._delete_user(admin_token, user_id)
+
+    def test_role_toggle_delete_and_self_protection_regression(self, admin_token):
+        headers = self._headers(admin_token)
+        me = requests.get(f"{API}/auth/me", headers=headers)
+        assert me.status_code == 200
+        self_id = me.json()["id"]
+
+        self_role = requests.put(
+            f"{API}/admin/users/{self_id}/role",
+            json={"role": "user"},
+            headers=headers,
+        )
+        assert self_role.status_code == 400, self_role.text
+        assert self_role.json()["detail"] == "You cannot change your own role"
+        self_delete = requests.delete(f"{API}/admin/users/{self_id}", headers=headers)
+        assert self_delete.status_code == 400, self_delete.text
+        assert self_delete.json()["detail"] == "You cannot delete your own account"
+
+        payload, created = self._create_admin_managed_user(admin_token)
+        user_id = created["id"]
+        try:
+            promote = requests.put(
+                f"{API}/admin/users/{user_id}/role",
+                json={"role": "admin"},
+                headers=headers,
+            )
+            assert promote.status_code == 200, promote.text
+            assert promote.json() == {"ok": True, "role": "admin"}
+            listed = requests.get(f"{API}/admin/users", headers=headers).json()
+            assert next(u for u in listed if u["id"] == user_id)["role"] == "admin"
+
+            demote = requests.put(
+                f"{API}/admin/users/{user_id}/role",
+                json={"role": "user"},
+                headers=headers,
+            )
+            assert demote.status_code == 200, demote.text
+            assert demote.json()["role"] == "user"
+
+            deleted = requests.delete(f"{API}/admin/users/{user_id}", headers=headers)
+            assert deleted.status_code == 200, deleted.text
+            assert deleted.json() == {"ok": True}
+            users_after = requests.get(f"{API}/admin/users", headers=headers).json()
+            assert all(user["id"] != user_id for user in users_after)
+            user_id = None
+        finally:
+            if user_id:
+                self._delete_user(admin_token, user_id)
+
+    def test_fix_logs_admin_shape_order_and_normal_user_scope(self, admin_token, user_creds):
+        admin_response = requests.get(
+            f"{API}/fix-logs", headers=self._headers(admin_token)
+        )
+        assert admin_response.status_code == 200, admin_response.text
+        logs = admin_response.json()
+        assert isinstance(logs, list)
+        assert logs, "Expected the known auto-fix history entry from the connected account"
+        timestamps = [entry["created_at"] for entry in logs]
+        assert timestamps == sorted(timestamps, reverse=True)
+        for entry in logs:
+            assert isinstance(entry.get("id"), str) and entry["id"]
+            for field in ("mirror_title", "host_name", "new_url", "created_at"):
+                assert isinstance(entry.get(field), str) and entry[field], (field, entry)
+            assert "_id" not in entry
+
+        user_response = requests.get(
+            f"{API}/fix-logs", headers=self._headers(user_creds["token"])
+        )
+        assert user_response.status_code == 200, user_response.text
+        assert user_response.json() == []
+
+
+# ---- Authentication playbook checks (iteration 12) ----
+class TestAuthenticationPlaybook:
+    """Cookie, bcrypt-storage, CORS behavior, and brute-force controls."""
+
+    def test_login_sets_httponly_cookie(self):
+        response = requests.post(
+            f"{API}/auth/login",
+            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+        )
+        assert response.status_code == 200, response.text
+        cookie_header = response.headers.get("set-cookie", "")
+        assert "access_token=" in cookie_header
+        assert "httponly" in cookie_header.lower()
+        assert response.cookies.get("access_token") == response.json()["access_token"]
+
+    def test_new_password_hash_is_bcrypt_2b_and_not_exposed(self, admin_token):
+        from dotenv import dotenv_values
+        from pymongo import MongoClient
+
+        payload, created = TestAdminUserManagementAndFixLogs._create_admin_managed_user(admin_token)
+        user_id = created["id"]
+        try:
+            env = dotenv_values("/app/backend/.env")
+            mongo = MongoClient(env["MONGO_URL"], serverSelectionTimeoutMS=5000)
+            stored = mongo[env["DB_NAME"]].users.find_one({"email": payload["email"].lower()})
+            assert stored is not None
+            assert stored["password_hash"].startswith("$2b$")
+            assert payload["password"] not in stored["password_hash"]
+            assert "password_hash" not in created
+            mongo.close()
+        finally:
+            TestAdminUserManagementAndFixLogs._delete_user(admin_token, user_id)
+
+    def test_brute_force_lockout_after_five_failures(self):
+        email = f"TEST_lockout_{uuid.uuid4().hex[:10]}@example.com"
+        statuses = []
+        for _ in range(6):
+            response = requests.post(
+                f"{API}/auth/login", json={"email": email, "password": "wrongpass"}
+            )
+            statuses.append(response.status_code)
+        assert statuses[:5] == [401] * 5, statuses
+        assert statuses[5] == 429, statuses
+
+    def test_cors_preflight_supports_credentialed_origin(self):
+        origin = "https://qa.example.test"
+        response = requests.options(
+            f"{API}/auth/login",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert response.status_code in (200, 204), response.text
+        assert response.headers.get("access-control-allow-credentials") == "true"
+        assert response.headers.get("access-control-allow-origin") == origin

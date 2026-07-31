@@ -1,0 +1,69 @@
+{
+  "summary": "Iteration 12 validated all four requested admin features through the public deployment. Backend: 53/54 regression tests passed; admin user creation as admin, new-user login, duplicate rejection, non-admin 403, password reset/new-vs-old login, short-password 422, fix-log scope/order/shape, role/delete regression, self-protection, bcrypt $2b$ storage, HttpOnly cookie, and lockout all passed. The sole backend failure is credentialed CORS: public preflight returns wildcard origin and no allow-credentials. Desktop UI create/search/reset/delete and Offline Reparatur-Verlauf passed. Mobile Admin > Benutzer has severe horizontal overflow that clips controls. A separate auth identity-conflict defect was reproduced when cookie and Bearer identities differ.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "OPTIONS /api/*",
+        "issue": "Credentialed CORS fails: preflight returns 204 with Access-Control-Allow-Origin: * and omits Access-Control-Allow-Credentials. backend/.env also configures CORS_ORIGINS='*', contrary to the explicit-origin auth requirement.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "All protected /api endpoints via get_current_user",
+        "issue": "Authentication identity is ambiguous when both an access_token cookie and Authorization Bearer token are present: the cookie silently wins. Reproduced by sending an admin Bearer token with a normal-user cookie; GET /api/auth/me returned the normal user, and an admin delete request was treated as a self-delete (400).",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminDashboard Benutzer tab",
+        "issue": "At 390px width, user controls overflow horizontally: user-search-input measured 741px wide from x=32, and the table clips role/actions outside the viewport. Search and row actions are not fully usable without horizontal page scrolling.",
+        "selector": "[data-testid='user-search-input'], table",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Admin > Benutzer at 390x844",
+        "issues": [
+          "The non-wrapping admin tab strip and full-width table expand the document beyond the viewport.",
+          "Only Name and part of E-Mail are visible; role, mirror count, reset-password, role-toggle, and delete actions are clipped."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results_iteration_12_final.xml",
+    "/app/test_reports/pytest/pytest_iteration_12_targeted.xml",
+    "/app/test_reports/pytest/pytest_iteration_12_retest.xml"
+  ],
+  "action_items": [
+    "Configure explicit allowed frontend origin(s) at both ingress and FastAPI CORS layers and return Access-Control-Allow-Credentials: true for credentialed preflights; do not combine wildcard origin with credentials.",
+    "Define one deterministic authentication source. Prefer an explicit valid Bearer header over cookie when supplied, or reject requests where both credentials identify different users.",
+    "Make Admin > Benutzer responsive: allow horizontal scrolling inside the table container or use mobile cards, constrain search width, and make the admin tab strip scrollable without expanding the page.",
+    "Add API load error handling to AdminDashboard and OfflineStreams so a rejected Promise.all does not leave a permanent loading/blank state."
+  ],
+  "critical_code_review_comments": [
+    "get_current_user reads request.cookies['access_token'] before Authorization, so a stale/different cookie overrides an explicit API token and can downgrade or change the acting identity.",
+    "CORS is configured as allow_credentials=True with CORS_ORIGINS='*'; the public ingress currently answers preflight itself with wildcard/no credentials, so browser credentialed cross-origin auth cannot work.",
+    "set_auth_cookie uses secure=False even though the public app is HTTPS; production auth cookies should be Secure (with deployment-aware configuration).",
+    "AdminDashboard load() and OfflineStreams load() use Promise.all without catch/finally UI state, leaving no recoverable error state if one endpoint fails.",
+    "server.py is 1345 lines, well above the 700-line review threshold; split auth, admin users, mirrors/fix logs, host integrations, settings, and background jobs into focused modules."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {
+    "backend": "98.1% (53/54; all requested feature APIs passed, credentialed CORS failed)",
+    "frontend": "90% (all requested desktop flows passed; mobile Admin Users responsiveness failed)"
+  },
+  "seed_data_creation": "Created temporary TEST_ admin/user accounts and isolated mirrors during backend/UI tests. All created users and mirrors were deleted; final public API checks confirmed no TEST_ users or mirrors remain.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 12 added TestAdminUserManagementAndFixLogs and TestAuthenticationPlaybook. Desktop selectors and flows passed: add-user-button, user-modal, new-user-name/email/role/password, user-modal-submit, user-search-input, reset-pw-{id}, delete-user-{id}, fix-history, fix-log-{id}. Wait for the Offline page's 'Lädt…' state to disappear before asserting history rows. Re-test CORS from the public URL, mismatched cookie/Bearer identity, and the Benutzer tab at 390x844 after fixes.",
+  "rca_of_the_issue": "CORS is misaligned at two layers: FastAPI is configured with wildcard origins while credentials are enabled, and the public ingress intercepts OPTIONS with wildcard/no credential headers. The auth identity conflict is caused by cookie-first credential resolution at server.py lines 64-69. Mobile overflow is caused by wide non-wrapping admin tabs/table content and a table wrapper using overflow-hidden rather than responsive scrolling/cards."
+}

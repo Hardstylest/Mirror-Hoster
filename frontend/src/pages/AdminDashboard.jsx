@@ -6,7 +6,7 @@ import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound,
 } from "lucide-react";
 
 const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
@@ -185,6 +185,78 @@ const StatCard = ({ icon: Icon, label, value }) => (
   </div>
 );
 
+function UserModal({ mode, user, onClose, onSaved }) {
+  const { t: tr } = useI18n();
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "user" });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      if (mode === "create") {
+        await api.post("/admin/users", form);
+        toast.success(tr("admin.users.created"));
+      } else {
+        await api.put(`/admin/users/${user.id}/password`, { password: form.password });
+        toast.success(tr("admin.users.pwUpdated"));
+      }
+      onSaved();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-lg w-full max-w-md p-6" onClick={(e) => e.stopPropagation()} data-testid="user-modal">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-display font-black text-xl">{mode === "create" ? tr("admin.users.newUser") : tr("admin.users.setNewPw")}</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+        </div>
+        <div className="space-y-4">
+          {mode === "create" && (
+            <>
+              <div>
+                <label className="text-sm text-muted-foreground">{tr("admin.users.name")}</label>
+                <input data-testid="new-user-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 focus:border-brand outline-none" />
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">{tr("admin.users.email")}</label>
+                <input data-testid="new-user-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 focus:border-brand outline-none" />
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">{tr("admin.users.role")}</label>
+                <select data-testid="new-user-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 focus:border-brand outline-none">
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
+              </div>
+            </>
+          )}
+          {mode === "password" && (
+            <p className="text-sm text-muted-foreground">{user?.name} · {user?.email}</p>
+          )}
+          <div>
+            <label className="text-sm text-muted-foreground">{tr("admin.users.password")}</label>
+            <input data-testid="new-user-password" type="password" autoComplete="new-password" value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="min. 6 Zeichen"
+              className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <button onClick={onClose} className="px-4 py-2 rounded-md border border-border hover:bg-secondary transition-colors">{tr("common.cancel")}</button>
+          <button onClick={submit} disabled={saving} data-testid="user-modal-submit"
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+            {mode === "create" ? tr("admin.users.create") : tr("admin.users.setNewPw")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const { t } = useI18n();
   const { user: currentUser } = useAuth();
@@ -197,6 +269,8 @@ export default function AdminDashboard() {
   const [siteForm, setSiteForm] = useState(null);
   const [savingSite, setSavingSite] = useState(false);
   const [refreshingTiers, setRefreshingTiers] = useState(false);
+  const [userModal, setUserModal] = useState(null); // {mode:'create'} | {mode:'password', user}
+  const [userSearch, setUserSearch] = useState("");
 
   const load = useCallback(async () => {
     const [s, h, u] = await Promise.all([api.get("/admin/stats"), api.get("/hosts"), api.get("/admin/users")]);
@@ -337,7 +411,17 @@ export default function AdminDashboard() {
         )}
 
         {tab === "users" && (
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <input data-testid="user-search-input" value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
+                placeholder={t("admin.users.search")}
+                className="w-full sm:w-80 bg-surface border border-border rounded-md px-4 py-2 text-sm focus:border-brand outline-none" />
+              <button onClick={() => setUserModal({ mode: "create" })} data-testid="add-user-button"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
+                <Plus size={18} /> {t("admin.users.add")}
+              </button>
+            </div>
+            <div className="bg-card border border-border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-surface text-muted-foreground">
                 <tr>
@@ -349,7 +433,10 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => {
+                {users.filter((u) => {
+                  const q = userSearch.trim().toLowerCase();
+                  return !q || (u.name || "").toLowerCase().includes(q) || (u.email || "").toLowerCase().includes(q);
+                }).map((u) => {
                   const isSelf = currentUser && u.id === currentUser.id;
                   return (
                   <tr key={u.id} className="border-t border-border" data-testid={`user-row-${u.id}`}>
@@ -371,6 +458,13 @@ export default function AdminDashboard() {
                           {u.role === "admin" ? t("admin.users.revokeAdmin") : t("admin.users.makeAdmin")}
                         </button>
                         <button
+                          onClick={() => setUserModal({ mode: "password", user: u })}
+                          data-testid={`reset-pw-${u.id}`}
+                          title={t("admin.users.resetPw")}
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors">
+                          <KeyRound size={16} />
+                        </button>
+                        <button
                           onClick={() => deleteUser(u)}
                           disabled={isSelf}
                           data-testid={`delete-user-${u.id}`}
@@ -384,6 +478,7 @@ export default function AdminDashboard() {
                 );})}
               </tbody>
             </table>
+            </div>
           </div>
         )}
 
@@ -443,6 +538,11 @@ export default function AdminDashboard() {
 
       {editor && (
         <HostEditor host={editor.host} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); load(); }} />
+      )}
+      {userModal && (
+        <UserModal mode={userModal.mode} user={userModal.user}
+          onClose={() => setUserModal(null)}
+          onSaved={() => { setUserModal(null); load(); }} />
       )}
     </DashboardLayout>
   );

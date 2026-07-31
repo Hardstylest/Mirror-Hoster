@@ -137,6 +137,15 @@ class RefreshTiersInput(BaseModel):
 class UserRoleInput(BaseModel):
     role: str
 
+class AdminCreateUserInput(BaseModel):
+    name: str
+    email: EmailStr
+    password: str = Field(min_length=6)
+    role: str = "user"
+
+class AdminPasswordInput(BaseModel):
+    password: str = Field(min_length=6)
+
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -884,7 +893,26 @@ async def autofix_link(mirror_id: str, host_id: str, user: dict = Depends(get_cu
         link["title"] = rep["title"]
     link["last_checked"] = now_iso()
     await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": m["links"]}})
+    await db.fix_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": m["created_by"],
+        "mirror_id": mirror_id,
+        "mirror_title": m.get("title"),
+        "slug": m.get("slug"),
+        "host_id": host_id,
+        "host_name": host.get("name"),
+        "new_url": rep["url"],
+        "title": rep.get("title"),
+        "created_at": now_iso(),
+    })
     return {"ok": True, "new_url": rep["url"], "title": rep.get("title")}
+
+
+@api_router.get("/fix-logs")
+async def fix_logs(user: dict = Depends(get_current_user)):
+    query = {} if user.get("role") == "admin" else {"user_id": user["id"]}
+    logs = await db.fix_logs.find(query).sort("created_at", -1).to_list(100)
+    return [public_mirror(l) for l in logs]
 
 
 # ---------------------------------------------------------------------------
@@ -1086,6 +1114,29 @@ async def admin_users(admin: dict = Depends(get_admin_user)):
                     "role": u.get("role", "user"), "created_at": u.get("created_at"),
                     "mirror_count": mirror_count})
     return out
+
+@api_router.post("/admin/users")
+async def admin_create_user(inp: AdminCreateUserInput, admin: dict = Depends(get_admin_user)):
+    if inp.role not in ("admin", "user"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+    email = inp.email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    doc = {"email": email, "name": inp.name, "password_hash": hash_password(inp.password),
+           "role": inp.role, "created_at": now_iso()}
+    res = await db.users.insert_one(doc)
+    return {"id": str(res.inserted_id), "name": inp.name, "email": email, "role": inp.role, "mirror_count": 0}
+
+@api_router.put("/admin/users/{user_id}/password")
+async def admin_set_password(user_id: str, inp: AdminPasswordInput, admin: dict = Depends(get_admin_user)):
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="User not found")
+    res = await db.users.update_one({"_id": oid}, {"$set": {"password_hash": hash_password(inp.password)}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True}
 
 @api_router.put("/admin/users/{user_id}/role")
 async def set_user_role(user_id: str, inp: UserRoleInput, admin: dict = Depends(get_admin_user)):
