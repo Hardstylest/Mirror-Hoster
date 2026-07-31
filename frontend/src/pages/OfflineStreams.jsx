@@ -197,15 +197,21 @@ export default function OfflineStreams() {
             <p className="text-sm text-muted-foreground">{t("offline.historyEmpty")}</p>
           ) : (
             <div className="bg-card border border-border rounded-lg divide-y divide-border">
-              {logs.map((l) => (
+              {logs.map((l) => {
+                const failed = l.status === "failed";
+                return (
                 <div key={l.id} className="flex items-center gap-3 px-4 py-3 text-sm" data-testid={`fix-log-${l.id}`}>
-                  <CheckCircle2 size={16} className="text-online shrink-0" />
+                  {failed
+                    ? <WifiOff size={16} className="text-offline shrink-0" />
+                    : <CheckCircle2 size={16} className="text-online shrink-0" />}
                   <span className="font-medium truncate">{l.mirror_title}</span>
                   <span className="text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground">{l.host_name}</span>
-                  <a href={l.new_url} target="_blank" rel="noreferrer" className="text-xs text-brand hover:underline truncate max-w-[220px]">{l.new_url}</a>
+                  {failed
+                    ? <span className="text-xs text-offline truncate">{t("offline.fixFailed")}: {l.reason}</span>
+                    : <a href={l.new_url} target="_blank" rel="noreferrer" className="text-xs text-brand hover:underline truncate max-w-[220px]">{l.new_url}</a>}
                   <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">{fmtDate(l.created_at)}</span>
                 </div>
-              ))}
+              );})}
             </div>
           )}
         </div>

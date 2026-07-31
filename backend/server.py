@@ -74,6 +74,8 @@ async def get_current_user(request: Request) -> dict:
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        if user.get("disabled"):
+            raise HTTPException(status_code=403, detail="Account disabled")
         user["id"] = str(user["_id"])
         user.pop("_id", None)
         user.pop("password_hash", None)
@@ -136,6 +138,9 @@ class RefreshTiersInput(BaseModel):
 
 class UserRoleInput(BaseModel):
     role: str
+
+class UserDisabledInput(BaseModel):
+    disabled: bool
 
 class AdminCreateUserInput(BaseModel):
     name: str
@@ -703,6 +708,8 @@ async def login(inp: LoginInput, request: Request, response: Response):
             upsert=True)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     await db.login_attempts.delete_one({"identifier": ident})
+    if user.get("disabled"):
+        raise HTTPException(status_code=403, detail="This account has been disabled")
     uid = str(user["_id"])
     token = create_access_token(uid, email)
     set_auth_cookie(response, token)
@@ -884,8 +891,27 @@ async def autofix_link(mirror_id: str, host_id: str, user: dict = Depends(get_cu
     key = resolve_api_key(provider, host.get("api_key"))
     title = link.get("title") or m.get("title")
     rep = await asyncio.to_thread(find_replacement, provider, key, title, host)
+
+    async def _log(status, new_url=None, reason=None, new_title=None):
+        await db.fix_logs.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": m["created_by"],
+            "mirror_id": mirror_id,
+            "mirror_title": m.get("title"),
+            "slug": m.get("slug"),
+            "host_id": host_id,
+            "host_name": host.get("name"),
+            "status": status,
+            "new_url": new_url,
+            "reason": reason,
+            "title": new_title,
+            "created_at": now_iso(),
+        })
+
     if not rep:
-        return {"ok": False, "message": "No matching online file found in your account"}
+        reason = "No matching online file found in your account"
+        await _log("failed", reason=reason)
+        return {"ok": False, "message": reason}
     link["embed_url"] = rep["url"]
     link["resolved_url"] = rep["url"]
     link["status"] = "online"
@@ -893,18 +919,7 @@ async def autofix_link(mirror_id: str, host_id: str, user: dict = Depends(get_cu
         link["title"] = rep["title"]
     link["last_checked"] = now_iso()
     await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": m["links"]}})
-    await db.fix_logs.insert_one({
-        "id": str(uuid.uuid4()),
-        "user_id": m["created_by"],
-        "mirror_id": mirror_id,
-        "mirror_title": m.get("title"),
-        "slug": m.get("slug"),
-        "host_id": host_id,
-        "host_name": host.get("name"),
-        "new_url": rep["url"],
-        "title": rep.get("title"),
-        "created_at": now_iso(),
-    })
+    await _log("success", new_url=rep["url"], new_title=rep.get("title"))
     return {"ok": True, "new_url": rep["url"], "title": rep.get("title")}
 
 
@@ -1112,8 +1127,21 @@ async def admin_users(admin: dict = Depends(get_admin_user)):
         mirror_count = await db.mirrors.count_documents({"created_by": str(u["_id"])})
         out.append({"id": str(u["_id"]), "name": u.get("name"), "email": u["email"],
                     "role": u.get("role", "user"), "created_at": u.get("created_at"),
-                    "mirror_count": mirror_count})
+                    "disabled": bool(u.get("disabled")), "mirror_count": mirror_count})
     return out
+
+@api_router.put("/admin/users/{user_id}/disabled")
+async def set_user_disabled(user_id: str, inp: UserDisabledInput, admin: dict = Depends(get_admin_user)):
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="You cannot disable your own account")
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="User not found")
+    res = await db.users.update_one({"_id": oid}, {"$set": {"disabled": inp.disabled}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True, "disabled": inp.disabled}
 
 @api_router.post("/admin/users")
 async def admin_create_user(inp: AdminCreateUserInput, admin: dict = Depends(get_admin_user)):

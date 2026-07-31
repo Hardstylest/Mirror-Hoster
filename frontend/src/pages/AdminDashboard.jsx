@@ -6,7 +6,7 @@ import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck,
 } from "lucide-react";
 
 const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
@@ -337,6 +337,14 @@ export default function AdminDashboard() {
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   };
 
+  const toggleDisabled = async (u) => {
+    try {
+      await api.put(`/admin/users/${u.id}/disabled`, { disabled: !u.disabled });
+      toast.success(t("admin.users.statusUpdated"));
+      load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+
   const tabs = [
     { id: "overview", label: t("admin.tab.overview") },
     { id: "hosts", label: t("admin.tab.hosts") },
@@ -442,7 +450,7 @@ export default function AdminDashboard() {
                   const isSelf = currentUser && u.id === currentUser.id;
                   return (
                   <tr key={u.id} className="border-t border-border" data-testid={`user-row-${u.id}`}>
-                    <td className="px-5 py-3">{u.name}{isSelf && <span className="ml-2 text-xs text-muted-foreground">({t("admin.users.you")})</span>}</td>
+                    <td className="px-5 py-3">{u.name}{isSelf && <span className="ml-2 text-xs text-muted-foreground">({t("admin.users.you")})</span>}{u.disabled && <span className="ml-2 text-xs px-2 py-0.5 rounded bg-offline/10 text-offline border border-offline/30">{t("admin.users.disabledBadge")}</span>}</td>
                     <td className="px-5 py-3 text-muted-foreground">{u.email}</td>
                     <td className="px-5 py-3">
                       <span className={`text-xs px-2 py-0.5 rounded ${u.role === "admin" ? "bg-brand/10 text-brand" : "bg-secondary text-muted-foreground"}`}>{u.role}</span>
@@ -465,6 +473,14 @@ export default function AdminDashboard() {
                           title={t("admin.users.resetPw")}
                           className="p-1.5 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors">
                           <KeyRound size={16} />
+                        </button>
+                        <button
+                          onClick={() => toggleDisabled(u)}
+                          disabled={isSelf}
+                          data-testid={`toggle-disabled-${u.id}`}
+                          title={u.disabled ? t("admin.users.enable") : t("admin.users.disable")}
+                          className={`p-1.5 rounded-md hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${u.disabled ? "text-online hover:text-online" : "text-muted-foreground hover:text-offline"}`}>
+                          {u.disabled ? <CircleCheck size={16} /> : <Ban size={16} />}
                         </button>
                         <button
                           onClick={() => deleteUser(u)}
