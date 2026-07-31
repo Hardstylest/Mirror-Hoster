@@ -13,22 +13,26 @@ const fmtDate = (iso) => {
 
 const AUTOFIX_PROVIDERS = ["doodstream", "voe"];
 
+const isAutofixSupported = (h) => h && (AUTOFIX_PROVIDERS.includes(h.provider) || (h.provider === "firestream" && h.has_login));
+
 export default function OfflineStreams() {
   const { t } = useI18n();
   const [mirrors, setMirrors] = useState([]);
-  const [providerMap, setProviderMap] = useState({});
+  const [hostMap, setHostMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(null);
   const [fixing, setFixing] = useState(null);
   const [recheckingAll, setRecheckingAll] = useState(false);
+  const [bulkFixing, setBulkFixing] = useState(false);
 
   const load = useCallback(async () => {
     const [m, h] = await Promise.all([api.get("/mirrors"), api.get("/hosts")]);
     setMirrors(m.data);
     const pm = {};
-    h.data.forEach((x) => { pm[x.id] = x.api_provider; });
-    setProviderMap(pm);
+    h.data.forEach((x) => { pm[x.id] = { provider: x.api_provider, has_login: x.has_login }; });
+    setHostMap(pm);
     setLoading(false);
+    window.dispatchEvent(new Event("offline-updated"));
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -70,6 +74,21 @@ export default function OfflineStreams() {
     setFixing(null);
   };
 
+  const bulkAutofix = async () => {
+    setBulkFixing(true);
+    const jobs = [];
+    offline.forEach((m) => m.offlineLinks.forEach((l) => {
+      if (isAutofixSupported(hostMap[l.host_id])) jobs.push({ mid: m.id, hid: l.host_id });
+    }));
+    let fixed = 0;
+    await Promise.all(jobs.map(async (j) => {
+      try { const { data } = await api.post(`/mirrors/${j.mid}/autofix/${j.hid}`); if (data.ok) fixed += 1; } catch { /* ignore */ }
+    }));
+    toast.success(`${fixed}/${jobs.length} ${t("offline.autofixOk")}`);
+    await load();
+    setBulkFixing(false);
+  };
+
   return (
     <DashboardLayout>
       <div className="p-8 max-w-6xl mx-auto">
@@ -81,15 +100,26 @@ export default function OfflineStreams() {
             <p className="text-muted-foreground mt-1">{t("offline.subtitle")}</p>
           </div>
           {offline.length > 0 && (
-            <button
-              onClick={recheckAll}
-              disabled={recheckingAll}
-              data-testid="recheck-all-button"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors"
-            >
-              <RefreshCw size={18} className={recheckingAll ? "animate-spin" : ""} />
-              {recheckingAll ? t("offline.rechecking") : t("offline.recheckAll")}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={bulkAutofix}
+                disabled={bulkFixing}
+                data-testid="bulk-autofix-button"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md border border-brand/40 text-brand font-semibold hover:bg-brand hover:text-black disabled:opacity-60 transition-colors"
+              >
+                <Wrench size={18} className={bulkFixing ? "animate-spin" : ""} />
+                {bulkFixing ? t("offline.autofixing") : t("offline.bulkFix")}
+              </button>
+              <button
+                onClick={recheckAll}
+                disabled={recheckingAll}
+                data-testid="recheck-all-button"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors"
+              >
+                <RefreshCw size={18} className={recheckingAll ? "animate-spin" : ""} />
+                {recheckingAll ? t("offline.rechecking") : t("offline.recheckAll")}
+              </button>
+            </div>
           )}
         </div>
 
@@ -116,7 +146,7 @@ export default function OfflineStreams() {
                     <p className="text-xs text-muted-foreground font-mono mt-1">/embed/{m.slug}</p>
                     <div className="flex flex-col gap-2 mt-3">
                       {m.offlineLinks.map((l) => {
-                        const supported = AUTOFIX_PROVIDERS.includes(providerMap[l.host_id]);
+                        const supported = isAutofixSupported(hostMap[l.host_id]);
                         const busy = fixing === `${m.id}:${l.host_id}`;
                         return (
                         <div key={l.host_id} className="flex items-center gap-3 text-sm bg-surface border border-border rounded-md px-3 py-2">

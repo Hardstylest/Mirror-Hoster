@@ -1,5 +1,6 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
@@ -14,10 +15,18 @@ export const DashboardLayout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [offlineCount, setOfflineCount] = useState(0);
+
+  useEffect(() => {
+    const refresh = () => api.get("/stats/dashboard").then(({ data }) => setOfflineCount(data.offline_mirrors || 0)).catch(() => {});
+    refresh();
+    window.addEventListener("offline-updated", refresh);
+    return () => window.removeEventListener("offline-updated", refresh);
+  }, [location.pathname]);
 
   const nav = [
     { to: "/dashboard", key: "my-mirrors", label: t("nav.myMirrors"), icon: LayoutDashboard },
-    { to: "/dashboard/offline", key: "offline-streams", label: t("nav.offline"), icon: WifiOff },
+    { to: "/dashboard/offline", key: "offline-streams", label: t("nav.offline"), icon: WifiOff, badge: offlineCount },
     ...(user?.role === "admin" ? [{ to: "/admin", key: "admin-panel", label: t("nav.adminPanel"), icon: Shield }] : []),
   ];
 
@@ -70,6 +79,11 @@ export const DashboardLayout = ({ children }) => {
               >
                 <n.icon size={18} />
                 {n.label}
+                {n.badge > 0 && (
+                  <span data-testid="offline-nav-badge" className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-bold bg-offline text-white">
+                    {n.badge}
+                  </span>
+                )}
               </Link>
             );
           })}

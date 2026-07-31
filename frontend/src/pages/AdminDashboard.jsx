@@ -8,7 +8,7 @@ import {
   Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw,
 } from "lucide-react";
 
-const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", tiers: [] };
+const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
 
 function HostEditor({ host, onClose, onSaved }) {
   const { t: tr } = useI18n();
@@ -54,6 +54,8 @@ function HostEditor({ host, onClose, onSaved }) {
       is_active: form.is_active,
       api_provider: form.api_provider || null,
       api_key: form.api_key ? form.api_key : null,
+      login_email: form.login_email ? form.login_email : null,
+      login_password: form.login_password ? form.login_password : null,
       tiers: form.tiers.map((t) => ({
         name: t.name,
         rate: parseFloat(t.rate) || 0,
@@ -124,6 +126,27 @@ function HostEditor({ host, onClose, onSaved }) {
                 </button>
               </div>
               {host?.has_api_key && <p className="text-xs text-muted-foreground mt-1">{tr("admin.host.apiKeySet")}</p>}
+            </div>
+          )}
+
+          {form.api_provider === "firestream" && (
+            <div className="space-y-3 border border-border rounded-md p-3 bg-surface/50">
+              <p className="text-xs text-muted-foreground">{tr("admin.host.loginHint")}</p>
+              <div>
+                <label className="text-sm text-muted-foreground">{tr("admin.host.loginEmail")}</label>
+                <input data-testid="host-login-email-input" type="email" autoComplete="off"
+                  value={form.login_email} onChange={(e) => setForm({ ...form, login_email: e.target.value })}
+                  placeholder="you@example.com"
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none" />
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">{tr("admin.host.loginPassword")}</label>
+                <input data-testid="host-login-password-input" type="password" autoComplete="new-password"
+                  value={form.login_password} onChange={(e) => setForm({ ...form, login_password: e.target.value })}
+                  placeholder={host?.has_login ? "•••••••••••••" : tr("admin.host.loginPassword")}
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+                {host?.has_login && <p className="text-xs text-muted-foreground mt-1">{tr("admin.host.loginSet")}</p>}
+              </div>
             </div>
           )}
 

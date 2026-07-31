@@ -114,6 +114,8 @@ class HostInput(BaseModel):
     is_active: bool = True
     api_provider: Optional[str] = None
     api_key: Optional[str] = None
+    login_email: Optional[str] = None
+    login_password: Optional[str] = None
 
 class HostLinkInput(BaseModel):
     host_id: str
@@ -255,11 +257,13 @@ def public_mirror(doc: dict) -> dict:
     return doc
 
 def public_host(doc: dict) -> dict:
-    """Serialize a host without leaking the raw API key (only whether one is set)."""
+    """Serialize a host without leaking secrets (only whether they are set)."""
     doc = dict(doc)
     doc.pop("_id", None)
     key = doc.pop("api_key", None)
     doc["has_api_key"] = bool(key)
+    pw = doc.pop("login_password", None)
+    doc["has_login"] = bool(pw and doc.get("login_email"))
     return doc
 
 # Fallback env vars used only when a host has no api_key stored in the DB.
@@ -545,7 +549,44 @@ def _dood_search_term(title: str) -> str:
     t = re.sub(r"\s+", " ", t).strip()
     return t or _norm_title(title)
 
-def find_replacement(provider: str, key: str, title: str):
+def _firestream_search(email: str, password: str, api_key: str, target: str):
+    """Log into FireStream (cookie session) and find the newest ONLINE video matching `target`."""
+    if not email or not password:
+        return None
+    s = requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+    lr = s.post("https://firestream.to/api/auth/login",
+                json={"email": email, "password": password}, timeout=20)
+    if lr.status_code != 200:
+        return None
+    matches, page = [], 1
+    while page <= 6:
+        r = s.get(f"https://firestream.to/api/videos?page={page}", timeout=20)
+        if r.status_code != 200:
+            break
+        d = r.json()
+        for v in d.get("videos", []):
+            if _norm_title(v.get("title") or v.get("originalName", "")) == target:
+                matches.append(v)
+        if not d.get("hasNext"):
+            break
+        page += 1
+    if not matches:
+        return None
+    matches.sort(key=lambda v: v.get("createdAt", ""), reverse=True)
+    for v in matches:
+        slug = v.get("slug")
+        if not slug:
+            continue
+        url = f"https://firestream.to/e/{slug}"
+        info = api_resolve_link("firestream", url, api_key) if api_key else None
+        if info and info.get("status") == "online":
+            return {"url": url, "title": v.get("title"), "code": slug}
+        if not api_key and v.get("status") == "active" and v.get("encodingStatus") in ("completed", "ready"):
+            return {"url": url, "title": v.get("title"), "code": slug}
+    return None
+
+def find_replacement(provider: str, key: str, title: str, host: Optional[dict] = None):
     """Search the hoster account for the newest ONLINE file whose name matches `title`."""
     target = _norm_title(title)
     if not target or not key:
@@ -577,6 +618,9 @@ def find_replacement(provider: str, key: str, title: str):
                     return {"url": info.get("url") or f"{prefix}{code}",
                             "title": r.get("title"), "code": code}
             return None
+        if provider == "firestream":
+            h = host or {}
+            return _firestream_search(h.get("login_email"), h.get("login_password"), key, target)
     except Exception as e:
         logger.warning(f"find_replacement {provider} failed: {e}")
     return None
@@ -685,9 +729,11 @@ async def update_host(host_id: str, inp: HostInput, admin: dict = Depends(get_ad
     if not existing:
         raise HTTPException(status_code=404, detail="Host not found")
     update = inp.model_dump()
-    # Blank api_key means "keep the existing key" (the raw key is never sent back to the UI).
+    # Blank secrets mean "keep the existing value" (raw secrets are never sent back to the UI).
     if not update.get("api_key"):
         update.pop("api_key", None)
+    if not update.get("login_password"):
+        update.pop("login_password", None)
     await db.hosts.update_one({"id": host_id}, {"$set": update})
     updated = await db.hosts.find_one({"id": host_id})
     return public_host(updated)
@@ -819,11 +865,13 @@ async def autofix_link(mirror_id: str, host_id: str, user: dict = Depends(get_cu
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
     provider = host.get("api_provider")
-    if provider not in ("doodstream", "voe"):
+    if provider not in ("doodstream", "voe", "firestream"):
         raise HTTPException(status_code=400, detail="Auto-fix is not supported for this host")
+    if provider == "firestream" and not (host.get("login_email") and host.get("login_password")):
+        raise HTTPException(status_code=400, detail="FireStream login not configured")
     key = resolve_api_key(provider, host.get("api_key"))
     title = link.get("title") or m.get("title")
-    rep = await asyncio.to_thread(find_replacement, provider, key, title)
+    rep = await asyncio.to_thread(find_replacement, provider, key, title, host)
     if not rep:
         return {"ok": False, "message": "No matching online file found in your account"}
     link["embed_url"] = rep["url"]
@@ -1128,6 +1176,11 @@ async def seed():
     if fire_key:
         await db.hosts.update_many({"api_provider": "firestream", "api_key": {"$in": [None, ""]}},
                                    {"$set": {"api_key": fire_key}})
+    fire_email = os.environ.get("FIRESTREAM_EMAIL")
+    fire_pw = os.environ.get("FIRESTREAM_PASSWORD")
+    if fire_email and fire_pw:
+        await db.hosts.update_many({"api_provider": "firestream", "login_password": {"$in": [None, ""]}},
+                                   {"$set": {"login_email": fire_email, "login_password": fire_pw}})
 
     # Backfill FireStream earning tiers (only when none are set, so admin edits are preserved).
     await db.hosts.update_many({"api_provider": "firestream", "tiers": {"$in": [[], None]}},

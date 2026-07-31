@@ -21,11 +21,12 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection with dashboard status badges.
 
 ## Implemented (2026-07-31)
-- **Tier-Auto-Update**: Täglicher Job + Admin-Button "Tiers jetzt aktualisieren" (`POST /api/admin/hosts/refresh-tiers`) liest Earn-Seiten aus und aktualisiert Tiers/default_rate + `tiers_updated_at`. VOE (server-gerendert `voe.sx/earn-money`, Ländernamen→ISO) und FireStream (Tiers im SPA-JS-Bundle) unterstützt; Doodstream ohne öffentliche Quelle → manuell. Anzeige "Auto-Update: <Datum>" pro Host.
-- **Auto-Fix Offline-Links**: Button je Offline-Link auf `/dashboard/offline` (`POST /api/mirrors/{id}/autofix/{host_id}`) sucht via Hoster-API die neueste ONLINE-Datei mit gleichem Dateinamen/Titel und ersetzt den Embed. Doodstream (`search/videos`) + VOE (`file/list`, Online per file/info verifiziert); FireStream nicht unterstützt (Button deaktiviert). Strikte Online-Prüfung: kein Match → ok:false (kein falsches "online").
-- **Offline-Link-Markierung im Mirror-Editor** + **FireStream Verdienst-Tiers** (s. vorher).
-- **Offline-Streams-Übersichtsseite** + **Auto-Offline-Prüfung im Player**.
-- Verifiziert: 45/45 Backend-Tests + Frontend-Flows (iteration_11); Online-Enforcement per curl nachgetestet.
+- **FireStream Auto-Fix (Session-Login)**: FireStream unterstützt jetzt Auto-Fix. Backend loggt sich per Session (cookie) mit in der DB gespeicherten Login-Daten ein (`POST firestream.to/api/auth/login`), durchsucht `My Videos` per Titel/Dateiname, verifiziert online via `file/info` und ersetzt den Embed. Login-Daten (E-Mail + Passwort) sind im Admin-Host-Editor editierbar (Passwort maskiert, `has_login`), aus `.env` vorbefüllt.
+- **Bulk-Auto-Fix**: Button "Alle auto-fixen" auf der Offline-Seite repariert alle unterstützten Offline-Links auf einmal (parallel), Toast mit Erfolgszähler.
+- **Offline-Badge im Menü**: Roter Zähler neben "Offline-Streams" = Anzahl Mirrors mit Offline-Link (`offline_mirrors` in `/stats/dashboard`), live-Update via `offline-updated`-Event.
+- **Doodstream Tier-Auto-Update**: Scraper für `doodstream.co/earn-money` (JS-Vars `data_countriesN`/`data_amountN` + Tier5/Default aus Text). Jetzt alle 3 Hoster automatisch (VOE, FireStream, Doodstream), täglich + manueller Button.
+- **Auto-Fix (Doodstream & VOE)** + **Tier-Auto-Update (VOE/FireStream)** + Offline-Übersicht + Editor-Markierung + Player-Recheck (s. vorher).
+- Verifiziert: alle Flows per curl + Screenshot (FireStream/Doodstream/VOE Auto-Fix, Bulk-Fix→Leerzustand, Badge=2, Tier-Scrape für alle 3, Login-Editor).
 - **"Key testen"-Button**: `POST /api/hosts/test-key` (Admin) validiert einen Hoster-API-Key gegen den Account-Endpunkt (Doodstream/FireStream `account/info`, VOE `settings/domain`). Button im Host-Editor testet getippten oder gespeicherten Key; Ergebnis als Toast (inkl. E-Mail/Balance). Key wird nie im Klartext zurückgegeben.
 - **Database-backed hoster API keys**: Keys aus `.env` in `hosts`-Collection, im Admin-Dashboard editierbar (maskiert, "leer lassen = behalten"). `GET /api/hosts` liefert nur `has_api_key`. `.env` bleibt Fallback.
 - **FireStream integriert** (firestream.to): Host + `api_provider="firestream"`, Online/Offline + Titel via `file/info`.
