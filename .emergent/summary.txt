@@ -1,0 +1,175 @@
+<analysis>**original_problem_statement**: 
+Bau mir eine Webseite wie https://listmirror.com
+Man kann dort Emebed Links von diversen Streaminghostern eintragen und man bekommt dann einen Embedlink mit einem Player wo ich zwischen den einzelnen Anbietern wählen kann worüber ich den Film schauen will.
+Im Player habe ich dann oben am Player einen Reitertab (wie im Browser). Ich hätte gerne das dort die Favicons der Streaminghoster mit angezeigt werden. Das System soll dem User als erstes den Anbieter anzeigen wo der Verdienst für das Land (via IP) am höchsten ist.
+Benötigt: Benutzer Registrierung, Benutzer Dashboard, Admin Dashboard, Statistiken für Filme, Offline Erkennung von Filmen. Hauptakzentfarbe: #48C7F2.
+
+**User's preferred language**: German (de). **INSTRUCT NEXT AGENT: You MUST respond in German to the user.**
+
+**what currently exists?** 
+A fully functional, multi-language (DE/EN) React and FastAPI application. Users can register, create Mirrors by pasting standard streaming links, which are auto-converted to embed links. The backend uses IP geolocation to sort the hoster tabs in the embed player based on the highest payout for the viewer's country. The player features a Click-to-Play overlay (to prevent instant ad popups while preserving revenue), fetches thumbnails via APIs, has Light/Dark mode, and includes Admin-configurable ad slots. It fully integrates Doodstream and VOE APIs for exact online/offline status detection and direct-domain resolving.
+
+**Last working item**:
+- **Last item agent was working**: Adding a new streaming hoster () and migrating Hoster API key management from the backend  file to the frontend Admin Dashboard (Database) so the user can manage keys and add new hosters dynamically without server restarts.
+- **Status**: IN PROGRESS
+- **Agent Testing Done**: N
+- **Which testing method agent to use?**: both (backend and frontend testing agent)
+- **User Testing Done**: N/A
+
+**All Pending/In progress Issue list**:
+Issue 1: Migrate Hoster API Keys to Database / Admin UI (P0)
+- Attempted fixes: Agent just started crawling the Firestream API documentation.
+- Next debug checklist: 
+  - Update MongoDB  or  schema to securely store API keys.
+  - Update  to read API keys from the DB instead of .
+  - Update  to include input fields for API keys per hoster.
+- Why fix this issue and what will be achieved with the fix? User explicitly requested to stop managing API keys via server files and wants to do it directly from the Admin Dashboard.
+- Status: IN PROGRESS
+- Is recurring issue? N
+- Should Test frontend/backend/both after fix? both
+
+Issue 2: Implement Firestream Integration (P0)
+- Attempted fixes: Crawled Firestream API docs and revenue page.
+- Next debug checklist: 
+  - Add Firestream to the seeded hosts list.
+  - Implement Firestream API logic in  (similar to Doodstream/VOE) for URL normalization and offline checking.
+- Why fix this issue and what will be achieved with the fix? Expands the platform's capabilities as requested by the user.
+- Status: IN PROGRESS
+- Is recurring issue? N
+- Should Test frontend/backend/both after fix? backend
+
+Issue 3: Allow adding NEW hosters dynamically via Admin Dashboard (P1)
+- Attempted fixes: None yet.
+- Next debug checklist: Add UI in  to create entirely new hosters with their respective base domains, API endpoints, and API keys.
+- Why fix this issue and what will be achieved with the fix? Makes the platform completely dynamic for the admin.
+- Status: NOT STARTED
+- Is recurring issue? N
+- Should Test frontend/backend/both after fix? both
+
+**In progress Task List**:
+Task 1: Add Firestream API and move API Key management to UI
+- Where to resume:  (to update how API keys are fetched) and  (to add the UI for API keys).
+- What will be achieved with this? User can manage hoster APIs from the web interface.
+- Status: IN PROGRESS
+- Should Test frontend/backend/both after fix? both
+- Blocked on something: None
+
+**Upcoming and Future Tasks**:
+Upcoming Tasks:
+- Add dynamic Add Hoster functionality in the Admin Dashboard (P1).
+
+Future Tasks:
+- Pre-seed additional popular hosters (e.g., Streamtape, Filemoon) if requested (P2).
+
+**Completed work in this session**:
+- Initial MVP setup (React + FastAPI + MongoDB) (DONE)
+- Auth & Admin Seeding (DONE)
+- IP-based Geolocation routing (DONE)
+- Light/Dark Mode toggle (DONE)
+- Doodstream iframe sandbox unblocking (DONE)
+- URL Normalization (Auto-converting pasted URLs to embed URLs) (DONE)
+- Doodstream and VOE official API integrations (DONE)
+- Multi-language (DE/EN) via Context (DONE)
+- Thumbnails fetching via Hoster APIs (DONE)
+- Search and Pagination on User Dashboard (DONE)
+- Embed-code generation modal (DONE)
+- Admin Ad-Slots (Header, Footer, Player Top/Bottom) (DONE)
+- Click-to-play Video Overlay (Performance and UX improvement) (DONE)
+
+**Earlier issues found/mentioned but not fixed**:
+None. Agent successfully resolved all previous bugs (Doodstream block, false positive offline detection).
+
+**Known issue recurrence from previous fork**:
+- Issue recurrence in previous fork: None
+- Recurrence count: 0
+- Status: N/A
+
+**Code Architecture**:
+
+
+**Key Technical Concepts**:
+- Frontend: React, Tailwind CSS, Context API (heavy usage for i18n, Theme, Auth, Settings), Shadcn UI patterns.
+- Backend: FastAPI, Motor (Async MongoDB).
+- Architecture: Geolocation-based routing (using ), dynamic iframe serving with Click-to-Play deferral.
+
+**key DB schema**:
+- : {id, email, password_hash, role, created_at}
+- : {id, name, domain, api_provider, earning_tiers, created_at}
+- : {id, user_id, title, description, slug, links (array of host mappings with resolved_urls), created_at}
+- : {id, mirror_id, slug, country, user_agent, created_at}
+- : {slug, host_id, count}
+- : {key (always 'site'), site_name, tagline, description, footer_text, ad_header, ad_footer, ad_player_top, ad_player_bottom}
+
+**changes in tech stack**: None
+
+**All files of reference**:
+- : Core logic for API integration (Doodstream/VOE) and Geo-routing. Needs updating to fetch API keys from DB.
+- : Needs UI for hoster API keys and adding new hosters.
+- : Handles the click-to-play overlay and iframe embedding.
+
+**Areas that need refactoring**:
+- : Currently,  and  are read from . These need to be migrated to read from the MongoDB  or  collection.
+
+**key api endpoints**:
+- : Creates a mirror, auto-normalizes URLs.
+- : Resolves the prioritized hosters based on country and returns embedded data + thumbnails.
+- : Updates host configurations (needs update to handle API keys).
+
+**Critical Info for New Agent**:
+- **IMPORTANT**: The user specifically wants to *stop* editing files on the server to add API keys. You MUST migrate API key storage from the backend  file to the Database and expose them in the Admin Dashboard.
+- **Hoster API Behavior**: Doodstream requires its canonical domain to bypass framing blocks (letting the browser handle Turnstile). VOE uses a direct rotating domain from its API (). Do not break these established API behaviors when refactoring.
+- The player implements a Click-to-Play overlay (poster + play button) before loading the iframe. This was done to prevent hoster ads from spamming users while preserving monetization (which prohibits hiding ads in the background). Do not remove this.
+
+**documents and test reports created in this job**:
+- 
+-  to 
+
+**Last 10 User Messages and any pending HUMAN messages**:
+1. (Pending Task) User requested adding  as a hoster and moving API key management directly into the Admin Dashboard UI so they don't have to touch server files. Also wants the ability to add new hosters via the Dashboard.
+2. User asked for a Pre-Roll-Overlay to suppress hoster ads or run them in the background. (Agent explained this breaks monetization and implemented a Click-to-Play overlay instead to defer loading).
+3. User requested Search + Pagination for My Mirrors, a standard HTML embed code output, and Custom Ad Slots (Header, Footer, Player). (Completed)
+4. User confirmed Doodstream works on their home PC. Requested thumbnails and Multi-language (DE/EN). (Completed)
+5. User provided API keys for Doodstream and VOE and noted abuse-protection mechanisms. (Completed)
+6. User reported Doodstream was still blocked and provided a  example. Requested URL auto-normalization. (Completed)
+7. User reported Doodstream Blocked and Offline-checker false positives. (Completed)
+8. User requested Light/Dark mode toggle, Doodstream sandbox fix, and Admin site settings. (Completed)
+9. User confirmed initial setup looks good.
+
+**Project Health Check**:
+- Broken: Nothing currently broken.
+- Mocked: Geolocation uses a free third-party API ().
+
+**3rd Party Integrations**:
+-  (Geolocation) - No Key Required.
+- Doodstream API - Requires User API Key (currently in , needs moving to DB).
+- VOE API - Requires User API Key (currently in , needs moving to DB).
+- Firestream API (Pending implementation) - Will require User API Key.
+
+**Testing status**:
+- Testing agent used after significant changes: YES (iterations 1-9)
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: None
+- Known regressions: None
+
+**Credentials to test flow**:
+Admin details are stored in .
+
+**What agent forgot to execute**:
+The agent gathered documentation for Firestream but was interrupted before modifying the database schema or UI to handle API keys natively in the dashboard.
+
+**Debugging checklist for current issue**
+    Issue: Move API Keys to Dashboard & Integrate Firestream
+
+    Frontend files to check: 
+    -  (Add input fields for API keys in the HostEditor component. Add an Add Hoster button).
+  
+    Backend files to check:
+    -  (Update , , and  to fetch API keys from  instead of ).
+    -  (Add Firestream API logic).
+
+    Database to check:
+    -  collection (Ensure existing seeds for VOE and Doodstream are updated with their respective API keys from the  file during migration).
+
+<TESTING METHOD>
+both
+</TESTING METHOD></analysis>
