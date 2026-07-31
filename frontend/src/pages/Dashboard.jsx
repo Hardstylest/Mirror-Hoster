@@ -6,7 +6,7 @@ import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
 import {
   Film, Eye, Wifi, WifiOff, Plus, Copy, BarChart3, Pencil, Trash2, RefreshCw, ExternalLink, Clock,
-  Code2, Search, ChevronLeft, ChevronRight, X,
+  Code2, Search, ChevronLeft, ChevronRight, X, DownloadCloud, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 
 function EmbedModal({ mirror, onClose }) {
@@ -36,6 +36,84 @@ function EmbedModal({ mirror, onClose }) {
           <button onClick={() => copy(iframe)} data-testid="copy-embed-code-button" className="inline-flex items-center gap-2 px-5 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
             <Code2 size={16} /> {t("dash.copyCode")}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function ImportModal({ onClose, onImported }) {
+  const { t } = useI18n();
+  const [text, setText] = useState("");
+  const [autoCreate, setAutoCreate] = useState(true);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const run = async () => {
+    if (!text.trim()) return;
+    setImporting(true);
+    setResult(null);
+    try {
+      const { data } = await api.post("/mirrors/import", { text, auto_create_hosts: autoCreate });
+      setResult(data);
+      toast.success(t("dash.import.done"));
+      onImported();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Import failed");
+    }
+    setImporting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" data-testid="import-modal" onClick={onClose}>
+      <div className="bg-card border border-border rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h3 className="font-display font-bold text-lg flex items-center gap-2"><DownloadCloud size={20} className="text-brand" /> {t("dash.import.title")}</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-muted-foreground">{t("dash.import.desc")}</p>
+          <textarea
+            data-testid="import-textarea"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={6}
+            placeholder={t("dash.import.placeholder")}
+            className="w-full bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors"
+          />
+          <label className="flex items-center gap-3 cursor-pointer" data-testid="import-autocreate-toggle">
+            <input type="checkbox" checked={autoCreate} onChange={(e) => setAutoCreate(e.target.checked)} className="w-4 h-4 accent-brand" />
+            <span className="text-sm">{t("dash.import.autoCreate")}</span>
+          </label>
+          <button onClick={run} disabled={importing || !text.trim()} data-testid="import-run-button"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+            {importing ? <RefreshCw size={16} className="animate-spin" /> : <DownloadCloud size={16} />}
+            {importing ? t("dash.import.importing") : t("dash.import.button")}
+          </button>
+
+          {result && (
+            <div className="mt-2 rounded-md border border-border bg-surface/50 p-4 space-y-2 text-sm" data-testid="import-result">
+              <p className="flex items-center gap-2 text-online font-medium"><CheckCircle2 size={16} /> {result.imported} imported · {result.skipped_existing} skipped (already imported)</p>
+              {result.embeds_found != null && <p className="text-muted-foreground">Embeds found: {result.embeds_found}{result.failed_count ? ` · ${result.failed_count} could not be read` : ""}</p>}
+              {result.created_hosts?.length > 0 && (
+                <div>
+                  <p className="flex items-center gap-2 text-pending"><AlertTriangle size={15} /> New hosts created (inactive):</p>
+                  <ul className="mt-1 list-disc list-inside text-muted-foreground">
+                    {result.created_hosts.map((h) => <li key={h.domain}>{h.name} <span className="font-mono">({h.domain})</span></li>)}
+                  </ul>
+                </div>
+              )}
+              {result.unknown_hosts?.length > 0 && (
+                <div>
+                  <p className="flex items-center gap-2 text-pending"><AlertTriangle size={15} /> Skipped unknown hosts:</p>
+                  <ul className="mt-1 list-disc list-inside text-muted-foreground">
+                    {result.unknown_hosts.map((h) => <li key={h.domain}><span className="font-mono">{h.domain}</span> ×{h.count}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -78,6 +156,7 @@ export default function Dashboard() {
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [embedFor, setEmbedFor] = useState(null);
+  const [showImport, setShowImport] = useState(false);
 
   const load = useCallback(async () => {
     const [m, s] = await Promise.all([api.get("/mirrors"), api.get("/stats/dashboard")]);
@@ -128,9 +207,14 @@ export default function Dashboard() {
             <h1 className="font-display font-black text-3xl">{t("nav.myMirrors")}</h1>
             <p className="text-muted-foreground mt-1">{t("dash.subtitle")}</p>
           </div>
-          <Link to="/dashboard/new" data-testid="create-mirror-button" className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
-            <Plus size={18} /> {t("nav.newMirror")}
-          </Link>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowImport(true)} data-testid="import-mirror-button" className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md border border-border hover:border-brand hover:text-brand font-semibold transition-colors">
+              <DownloadCloud size={18} /> {t("dash.import")}
+            </button>
+            <Link to="/dashboard/new" data-testid="create-mirror-button" className="inline-flex items-center gap-2 px-4 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
+              <Plus size={18} /> {t("nav.newMirror")}
+            </Link>
+          </div>
         </div>
 
         {stats && (
@@ -241,6 +325,7 @@ export default function Dashboard() {
         )}
       </div>
       {embedFor && <EmbedModal mirror={embedFor} onClose={() => setEmbedFor(null)} />}
+      {showImport && <ImportModal onClose={() => setShowImport(false)} onImported={load} />}
     </DashboardLayout>
   );
 }

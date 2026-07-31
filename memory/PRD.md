@@ -102,6 +102,12 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Verifiziert (curl/pyzipper + Screenshot): ZIP nicht ohne PW lesbar, Restore ohne PW→400, falsches PW→400, korrektes PW→200 (9 Collections), unverschlüsselter Download+Restore ok, UI rendert korrekt. Test-Passwort danach aus DB entfernt.
 - **„Passwort prüfen"-Button**: `POST /admin/backup/verify-password` (Form `password`) verschlüsselt ein Test-ZIP mit dem GESPEICHERTEN Passwort und entschlüsselt es mit dem EINGEGEBENEN → bestätigt Übereinstimmung, bevor es ernst wird. UI im Verschlüsselungs-Bereich (nur wenn Passwort gespeichert), Toast grün/rot. Getestet: kein-PW-gespeichert/korrekt/falsch/leer + UI-Screenshot (grüner Erfolg-Toast).
 
+## ListMirror-Import (2026-06)
+- **Import ohne API/Export**: listmirror.com bietet keine API/Export UND die Login-Seite ist per Cloudflare Turnstile geschützt (Server-Login mit Zugangsdaten daher nicht zuverlässig möglich). Lösung: Die **öffentlichen Embed-Seiten** (`listmirror.com/embed/{id}`) enthalten die echten Host-Links (`data-url` je Anbieter) + Titel im HTML und sind serverseitig ohne Cloudflare-Block abrufbar.
+- **Endpoint** `POST /api/mirrors/import` (auth): Input `{text, auto_create_hosts}`. Parst eingefügte Playlist- und/oder Embed-Links (auch bare IDs mit Auto-Erkennung), expandiert Playlists (`view_playlist&slug=` inkl. Pagination-Loop), scrapt jede Embed-Seite (ThreadPool, max 400 Embeds), mappt Host per Domain auf bestehende Hoster. Unbekannte Hoster: `auto_create_hosts=true` → als **inaktiv** angelegt (`auto_imported:true`), sonst übersprungen+gelistet. Dedup per `source_ref="listmirror:{slug}"`.
+- **UI**: „Importieren"-Button im Dashboard-Header → Modal mit Textarea + „Hoster automatisch anlegen"-Toggle + Ergebnis-Zusammenfassung (imported/skipped/created hosts/unknown). i18n DE/EN.
+- Verifiziert (curl + Screenshot): Playlist-Import 6 Mirrors mit korrekten Titeln+Links, VOE gegen bestehenden Hoster gematcht, 7 unbekannte Hoster inaktiv angelegt, Re-Import→6 skipped (Dedup), UI End-to-End inkl. deutscher Übersetzung. Test-Daten danach entfernt.
+
 ## Backlog / Next
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.

@@ -140,6 +140,10 @@ class MirrorInput(BaseModel):
     description: Optional[str] = ""
     links: List[HostLinkInput] = []
 
+class MirrorImportInput(BaseModel):
+    text: str
+    auto_create_hosts: bool = True
+
 class TestKeyInput(BaseModel):
     api_provider: Optional[str] = None
     api_key: Optional[str] = None
@@ -1164,6 +1168,187 @@ async def create_mirror(inp: MirrorInput, user: dict = Depends(get_current_user)
     await db.mirrors.insert_one(doc)
     asyncio.create_task(resolve_mirror_links(doc["id"]))
     return public_mirror(doc)
+
+# ---------------------------------------------------------------------------
+# ListMirror import (scrapes public playlist/embed pages — no API/export needed)
+# ---------------------------------------------------------------------------
+LM_BASE = "https://listmirror.com"
+LM_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+LM_MAX_EMBEDS = 400
+
+def _lm_get(url: str):
+    try:
+        r = requests.get(url, headers={"User-Agent": LM_UA}, timeout=25)
+        if r.status_code == 200:
+            return r.text
+    except Exception:
+        pass
+    return None
+
+def _lm_parse_embed(html: str):
+    title_m = re.search(r"<title>(.*?)</title>", html or "", re.S)
+    title = title_m.group(1).strip() if title_m else ""
+    title = re.sub(r"\s*[\u2013\-]\s*ListMirror\s*$", "", title).strip()
+    opts = re.findall(r'mirror-opt"[^>]*data-url="([^"]+)"[^>]*>\s*([^<]+?)\s*</a>', html or "")
+    mirrors = [(u.strip(), l.strip()) for (u, l) in opts if u.strip()]
+    return title, mirrors
+
+def _lm_playlist_embed_ids(slug: str):
+    ids, seen = [], set()
+    for page in range(1, 51):
+        html = _lm_get(f"{LM_BASE}/?action=view_playlist&slug={slug}&page={page}")
+        if not html:
+            break
+        found = re.findall(r"/embed/([A-Za-z0-9_-]+)", html)
+        new = [i for i in dict.fromkeys(found) if i not in seen]
+        if not new:
+            break
+        for i in new:
+            seen.add(i); ids.append(i)
+        if len(ids) >= LM_MAX_EMBEDS:
+            break
+    return ids
+
+def _lm_domain(url: str):
+    from urllib.parse import urlparse
+    try:
+        net = urlparse(url if "://" in url else "https://" + url).netloc.lower()
+        return net[4:] if net.startswith("www.") else net
+    except Exception:
+        return ""
+
+def _lm_collect_targets(text: str):
+    pls = re.findall(r"(?:view_playlist|preview_playlist)[^\s]*?slug=([A-Za-z0-9_-]+)", text)
+    embeds = re.findall(r"/embed/([A-Za-z0-9_-]+)", text)
+    embeds += re.findall(r"(?:view_embed|preview_embed)[^\s]*?slug=([A-Za-z0-9_-]+)", text)
+    consumed = set(pls) | set(embeds)
+    bare = []
+    for tok in re.split(r"[\s,]+", text.strip()):
+        tok = tok.strip()
+        if not tok or any(c in tok for c in "/?=."):
+            continue
+        if re.fullmatch(r"[A-Za-z0-9_-]{6,20}", tok) and tok not in consumed:
+            bare.append(tok)
+    return list(dict.fromkeys(pls)), list(dict.fromkeys(embeds)), list(dict.fromkeys(bare))
+
+def _lm_scrape(text: str):
+    from concurrent.futures import ThreadPoolExecutor
+    pls, embeds, bare = _lm_collect_targets(text)
+    for tok in bare:
+        html = _lm_get(f"{LM_BASE}/embed/{tok}")
+        if html and "mirror-opt" in html:
+            embeds.append(tok)
+        else:
+            phtml = _lm_get(f"{LM_BASE}/?action=view_playlist&slug={tok}")
+            if phtml and "/embed/" in phtml:
+                pls.append(tok)
+    for slug in list(dict.fromkeys(pls)):
+        embeds.extend(_lm_playlist_embed_ids(slug))
+    embeds = list(dict.fromkeys(embeds))[:LM_MAX_EMBEDS]
+
+    def fetch_one(slug):
+        html = _lm_get(f"{LM_BASE}/embed/{slug}")
+        if not html:
+            return (slug, None)
+        title, mirrors = _lm_parse_embed(html)
+        return (slug, {"slug": slug, "title": title or slug, "mirrors": mirrors})
+
+    results, failed = [], []
+    if embeds:
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            for slug, data in ex.map(fetch_one, embeds):
+                if data and data["mirrors"]:
+                    results.append(data)
+                else:
+                    failed.append(slug)
+    return {"playlists": list(dict.fromkeys(pls)), "embeds_found": len(embeds), "results": results, "failed": failed}
+
+@api_router.post("/mirrors/import")
+async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_current_user)):
+    text = (inp.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Please paste at least one ListMirror playlist or embed link.")
+    scraped = await asyncio.to_thread(_lm_scrape, text)
+    if not scraped["results"]:
+        raise HTTPException(status_code=400, detail="No importable embeds found. Paste ListMirror playlist or embed links (e.g. https://listmirror.com/embed/XXXX).")
+
+    hosts = await db.hosts.find({}).to_list(1000)
+
+    def find_host(domain: str):
+        d = domain.lower()
+        for h in hosts:
+            hd = (h.get("domain") or "").lower()
+            if hd and (d == hd or d.endswith("." + hd) or hd.endswith("." + d)):
+                return h
+        return None
+
+    imported, skipped_existing = 0, 0
+    created_hosts, skipped_hosts = [], {}
+    for emb in scraped["results"]:
+        source_ref = f"listmirror:{emb['slug']}"
+        if await db.mirrors.find_one({"created_by": user["id"], "source_ref": source_ref}):
+            skipped_existing += 1
+            continue
+        links = []
+        for (url, label) in emb["mirrors"]:
+            domain = _lm_domain(url)
+            if not domain:
+                continue
+            h = find_host(domain)
+            if not h:
+                if inp.auto_create_hosts:
+                    h = {
+                        "id": str(uuid.uuid4()),
+                        "name": (label or domain.split(".")[0]).strip().title(),
+                        "domain": domain,
+                        "default_rate": 5.0,
+                        "tiers": [],
+                        "is_active": False,
+                        "api_provider": None,
+                        "api_key": None,
+                        "login_email": None,
+                        "login_password": None,
+                        "created_at": now_iso(),
+                        "auto_imported": True,
+                    }
+                    await db.hosts.insert_one(dict(h))
+                    hosts.append(h)
+                    if not any(c["domain"] == domain for c in created_hosts):
+                        created_hosts.append({"name": h["name"], "domain": domain})
+                else:
+                    skipped_hosts[domain] = skipped_hosts.get(domain, 0) + 1
+                    continue
+            links.append({"host_id": h["id"], "embed_url": url})
+        if not links:
+            continue
+        enriched = await enrich_host_links(links)
+        for l in enriched:
+            l["status"] = "pending"; l["last_checked"] = None
+        doc = {
+            "id": str(uuid.uuid4()),
+            "slug": secrets.token_urlsafe(6),
+            "title": emb["title"],
+            "description": "",
+            "links": enriched,
+            "created_by": user["id"],
+            "creator_name": user.get("name"),
+            "views": 0,
+            "created_at": now_iso(),
+            "source_ref": source_ref,
+        }
+        await db.mirrors.insert_one(doc)
+        asyncio.create_task(resolve_mirror_links(doc["id"]))
+        imported += 1
+
+    return {
+        "ok": True,
+        "imported": imported,
+        "skipped_existing": skipped_existing,
+        "embeds_found": scraped["embeds_found"],
+        "failed_count": len(scraped["failed"]),
+        "created_hosts": created_hosts,
+        "unknown_hosts": [{"domain": d, "count": c} for d, c in skipped_hosts.items()],
+    }
 
 @api_router.get("/mirrors/{mirror_id}")
 async def get_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
