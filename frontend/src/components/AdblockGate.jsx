@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../context/I18nContext";
 import { ShieldAlert, X } from "lucide-react";
 
-// Bait-element detection: adblockers hide elements with ad-like class names.
-const detectAdblock = () =>
+// Signal 1: bait element that adblockers' cosmetic filters hide.
+const checkBaitElement = () =>
   new Promise((resolve) => {
     try {
       const bait = document.createElement("div");
-      bait.className = "adsbox ad-banner ad-placement pub_300x250 adsbygoogle ad";
+      bait.className = "adsbox ad-banner ad-placement pub_300x250 adsbygoogle ad textads banner-ads";
       bait.style.cssText =
         "position:absolute;left:-9999px;top:-9999px;width:300px;height:250px;";
       document.body.appendChild(bait);
@@ -20,11 +20,33 @@ const detectAdblock = () =>
           cs.visibility === "hidden";
         bait.remove();
         resolve(blocked);
-      }, 140);
+      }, 120);
     } catch {
       resolve(false);
     }
   });
+
+// Signal 2: try loading a well-known ads script. Adblockers block the request -> rejects.
+// A slow/offline network resolves as "not blocked" (fail-open) to avoid false positives.
+const checkNetworkBait = () =>
+  new Promise((resolve) => {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => { ctrl.abort(); resolve(false); }, 2500);
+      fetch("https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js", {
+        method: "HEAD", mode: "no-cors", cache: "no-store", signal: ctrl.signal,
+      })
+        .then(() => { clearTimeout(to); resolve(false); })
+        .catch((e) => { clearTimeout(to); resolve(e.name !== "AbortError"); });
+    } catch {
+      resolve(false);
+    }
+  });
+
+const detectAdblock = async () => {
+  const [bait, net] = await Promise.all([checkBaitElement(), checkNetworkBait()]);
+  return bait || net;
+};
 
 // mode: "off" | "warn" | "block"
 export function AdblockGate({ mode = "off" }) {
@@ -59,8 +81,9 @@ export function AdblockGate({ mode = "off" }) {
     let alive = true;
     const tick = async () => { if (alive) await runCheck(); };
     tick();
+    const fast = setTimeout(tick, 900);   // confirm the 2-hit debounce quickly (~1s)
     const id = setInterval(tick, 5000);
-    return () => { alive = false; clearInterval(id); };
+    return () => { alive = false; clearTimeout(fast); clearInterval(id); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
