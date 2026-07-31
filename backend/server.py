@@ -21,6 +21,8 @@ import jwt
 import bcrypt
 import requests
 import re
+import socket
+import ipaddress
 from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
@@ -57,9 +59,12 @@ def create_access_token(user_id: str, email: str) -> str:
                "exp": datetime.now(timezone.utc) + timedelta(days=7), "type": "access"}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
+# Cookies are Secure by default; set COOKIE_SECURE="false" only for plain-HTTP local dev.
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() != "false"
+
 def set_auth_cookie(response: Response, token: str):
     response.set_cookie(key="access_token", value=token, httponly=True,
-                        secure=False, samesite="lax", max_age=604800, path="/")
+                        secure=COOKIE_SECURE, samesite="lax", max_age=604800, path="/")
 
 async def get_current_user(request: Request) -> dict:
     token = request.cookies.get("access_token")
@@ -158,11 +163,40 @@ class AdminPasswordInput(BaseModel):
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+# Number of trusted reverse proxies (nginx/ingress) in front of the app. The real
+# client IP is the entry appended by our own proxy, NOT the left-most (spoofable) one.
+TRUSTED_PROXY_COUNT = int(os.environ.get("TRUSTED_PROXY_COUNT", "1"))
+
 def get_client_ip(request: Request) -> str:
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        if parts:
+            # Attackers can prepend a fake IP; our proxy appends the true peer to the
+            # right, so index from the right past the trusted hops.
+            idx = max(0, len(parts) - TRUSTED_PROXY_COUNT)
+            return parts[idx]
     return request.client.host if request.client else "0.0.0.0"
+
+
+def _is_public_host(url: str) -> bool:
+    """SSRF guard: resolve the URL host and reject private/loopback/link-local/reserved
+    targets so user-supplied embed URLs cannot probe internal services or cloud metadata."""
+    try:
+        u = urlparse(url if "://" in url else "https://" + url)
+        if u.scheme not in ("http", "https"):
+            return False
+        host = u.hostname
+        if not host:
+            return False
+        for info in socket.getaddrinfo(host, None):
+            ip = ipaddress.ip_address(info[4][0])
+            if (ip.is_private or ip.is_loopback or ip.is_link_local
+                    or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+                return False
+        return True
+    except Exception:
+        return False
 
 _geo_cache = {}
 
@@ -201,8 +235,24 @@ def probe_url(url: str):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
-        r = requests.get(url, timeout=10, headers=headers, allow_redirects=True)
-        final_url = str(r.url) or url
+        if not _is_public_host(url):
+            return "unknown", url
+        # Follow redirects manually so every hop is re-validated (blocks redirect-based SSRF).
+        current = url
+        r = None
+        for _ in range(5):
+            r = requests.get(current, timeout=10, headers=headers, allow_redirects=False)
+            if r.status_code in (301, 302, 303, 307, 308):
+                loc = r.headers.get("location")
+                if not loc:
+                    break
+                nxt = requests.compat.urljoin(current, loc)
+                if not _is_public_host(nxt):
+                    return "unknown", current
+                current = nxt
+                continue
+            break
+        final_url = current or url
         code = r.status_code
         if code in (404, 410):
             return "offline", final_url
@@ -678,7 +728,19 @@ async def resolve_mirror_links(mirror_id: str):
 # Auth endpoints
 # ---------------------------------------------------------------------------
 @api_router.post("/auth/register")
-async def register(inp: RegisterInput, response: Response):
+async def register(inp: RegisterInput, request: Request, response: Response):
+    ip = get_client_ip(request)
+    ip_ident = f"register:{ip}"
+    ip_attempt = await db.login_attempts.find_one({"identifier": ip_ident})
+    if ip_attempt and ip_attempt.get("count", 0) >= 10:
+        locked = ip_attempt.get("locked_until")
+        if locked and datetime.fromisoformat(locked) > datetime.now(timezone.utc):
+            raise HTTPException(status_code=429, detail="Too many sign-ups from this network. Try again later.")
+    await db.login_attempts.update_one(
+        {"identifier": ip_ident},
+        {"$inc": {"count": 1},
+         "$set": {"locked_until": (datetime.now(timezone.utc) + timedelta(minutes=60)).isoformat()}},
+        upsert=True)
     email = inp.email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -693,21 +755,34 @@ async def register(inp: RegisterInput, response: Response):
 @api_router.post("/auth/login")
 async def login(inp: LoginInput, request: Request, response: Response):
     email = inp.email.lower()
-    ident = f"{get_client_ip(request)}:{email}"
+    ip = get_client_ip(request)
+    ident = f"{ip}:{email}"
+    ip_ident = f"ip:{ip}"
+    now = datetime.now(timezone.utc)
+
+    def _locked(doc, limit):
+        if doc and doc.get("count", 0) >= limit:
+            locked = doc.get("locked_until")
+            if locked and datetime.fromisoformat(locked) > now:
+                return True
+        return False
+
     attempt = await db.login_attempts.find_one({"identifier": ident})
-    if attempt and attempt.get("count", 0) >= 5:
-        locked_until = attempt.get("locked_until")
-        if locked_until and datetime.fromisoformat(locked_until) > datetime.now(timezone.utc):
-            raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
+    ip_attempt = await db.login_attempts.find_one({"identifier": ip_ident})
+    # Per-account (5) and per-IP across all accounts (20, blocks password spraying).
+    if _locked(attempt, 5) or _locked(ip_attempt, 20):
+        raise HTTPException(status_code=429, detail="Too many attempts. Try again later.")
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(inp.password, user["password_hash"]):
-        await db.login_attempts.update_one(
-            {"identifier": ident},
-            {"$inc": {"count": 1},
-             "$set": {"locked_until": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()}},
-            upsert=True)
+        for key, mins in ((ident, 15), (ip_ident, 15)):
+            await db.login_attempts.update_one(
+                {"identifier": key},
+                {"$inc": {"count": 1},
+                 "$set": {"locked_until": (now + timedelta(minutes=mins)).isoformat()}},
+                upsert=True)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     await db.login_attempts.delete_one({"identifier": ident})
+    await db.login_attempts.delete_one({"identifier": ip_ident})
     if user.get("disabled"):
         raise HTTPException(status_code=403, detail="This account has been disabled")
     uid = str(user["_id"])
@@ -1425,10 +1500,14 @@ async def root():
 
 app.include_router(api_router)
 
+_cors_origins = [o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o.strip()]
+_cors_wildcard = _cors_origins == ['*']
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    # A wildcard origin cannot be combined with credentials (browsers reject it and it is
+    # insecure). The SPA authenticates via Bearer tokens, so credentials aren't required for "*".
+    allow_credentials=not _cors_wildcard,
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
