@@ -21,7 +21,11 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection with dashboard status badges.
 
 ## Implemented (2026-07-31)
-- **Benutzer-Sperre (Deaktivieren)**: Toggle pro Nutzer (`PUT /api/admin/users/{id}/disabled`). Gesperrte Nutzer können sich nicht einloggen (Login 403) und werden mit gültigem Token sofort abgewiesen (`get_current_user` 403). "gesperrt"-Badge in der Liste. Selbstschutz: eigener Account nicht sperrbar.
+- **Web-Installer** unter `/setup` und `/setup/install`: `GET /api/setup/status` (installed + DB-Status), `POST /api/setup/init` (Seitenname/Tagline/Beschreibung/Footer + ersten Admin anlegen, danach gesperrt). Guard leitet bei bereits installierter Instanz auf `/login`.
+- **Admin-Auto-Seed optional**: Admin wird beim Start nur noch erstellt, wenn `ADMIN_EMAIL`+`ADMIN_PASSWORD` in `.env` gesetzt sind — sonst übernimmt der `/setup`-Assistent den ersten Admin.
+- **README.md**: vollständige Projektbeschreibung, VPS-Mindestvoraussetzungen, Schritt-für-Schritt-Installation (MongoDB, backend/.env inkl. JWT_SECRET/CORS, systemd, Nginx+TLS), Web-Installer-Anleitung, Hoster-Einrichtung.
+- Hinweis: DB-Zugangsdaten bleiben in `backend/.env` (Backend braucht sie beim Boot); der Web-Installer deckt Seiten-Config + Admin ab.
+- Verifiziert: setup/status=installed, setup/init→403 bei installiert, `/setup/install`→Login-Redirect (Screenshot), Admin-Login weiterhin ok.
 - **Fix-Verlauf inkl. Fehlversuche**: `db.fix_logs` speichert jetzt `status` (success/failed) + `reason`; fehlgeschlagene Auto-/Bulk-Fixes werden rot mit Grund angezeigt, erfolgreiche grün mit neuem Link.
 - Admin: Benutzer anlegen, Passwort zurücksetzen, Suche, Reparatur-Verlauf (vorherige Runde).
 - Verifiziert: disable→Login 403 + Selbstschutz 400 + Failed-Log per curl, UI per Screenshot.

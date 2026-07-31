@@ -14,6 +14,7 @@ import MirrorForm from "./pages/MirrorForm";
 import MirrorStats from "./pages/MirrorStats";
 import AdminDashboard from "./pages/AdminDashboard";
 import EmbedPlayer from "./pages/EmbedPlayer";
+import SetupWizard from "./pages/SetupWizard";
 
 const Protected = ({ children, adminOnly }) => {
   const { user, ready } = useAuth();
@@ -34,6 +35,8 @@ function App() {
               <AuthProvider>
                 <Routes>
                   <Route path="/" element={<LandingPage />} />
+                  <Route path="/setup" element={<SetupWizard />} />
+                  <Route path="/setup/install" element={<SetupWizard />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
                   <Route path="/e/:slug" element={<EmbedPlayer />} />

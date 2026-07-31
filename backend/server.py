@@ -1119,6 +1119,49 @@ async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_us
     data.pop("_id", None)
     return data
 
+# ---------------------------------------------------------------------------
+# First-run setup wizard
+# ---------------------------------------------------------------------------
+class SetupInput(BaseModel):
+    site_name: str
+    tagline: str = ""
+    description: str = ""
+    footer_text: str = ""
+    admin_name: str = "Administrator"
+    admin_email: EmailStr
+    admin_password: str = Field(min_length=6)
+
+async def _is_installed() -> bool:
+    s = await db.settings.find_one({"key": "site"})
+    if s and s.get("installed"):
+        return True
+    return (await db.users.count_documents({"role": "admin"})) > 0
+
+@api_router.get("/setup/status")
+async def setup_status():
+    db_connected = True
+    try:
+        await client.admin.command("ping")
+    except Exception:
+        db_connected = False
+    return {"installed": await _is_installed(), "db_connected": db_connected,
+            "db_name": os.environ.get("DB_NAME", "")}
+
+@api_router.post("/setup/init")
+async def setup_init(inp: SetupInput):
+    if await _is_installed():
+        raise HTTPException(status_code=403, detail="Setup has already been completed")
+    email = inp.admin_email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=400, detail="Email already registered")
+    await db.users.insert_one({"email": email, "name": inp.admin_name,
+                               "password_hash": hash_password(inp.admin_password),
+                               "role": "admin", "created_at": now_iso()})
+    settings = {"key": "site", "site_name": inp.site_name, "tagline": inp.tagline,
+                "description": inp.description, "footer_text": inp.footer_text, "installed": True}
+    await db.settings.update_one({"key": "site"}, {"$set": settings}, upsert=True)
+    return {"ok": True}
+
 @api_router.get("/admin/users")
 async def admin_users(admin: dict = Depends(get_admin_user)):
     users = await db.users.find({}).to_list(2000)
@@ -1244,17 +1287,21 @@ FIRESTREAM_TIERS = [
 
 async def seed():
     await db.users.create_index("email", unique=True)
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
-    existing = await db.users.find_one({"email": admin_email})
-    if not existing:
-        await db.users.insert_one({"email": admin_email, "name": "Administrator",
-                                   "password_hash": hash_password(admin_password),
-                                   "role": "admin", "created_at": now_iso()})
-        logger.info("Seeded admin user")
-    elif not verify_password(admin_password, existing["password_hash"]):
-        await db.users.update_one({"email": admin_email},
-                                  {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}})
+    # Only auto-create an admin when explicit credentials are provided via env.
+    # Otherwise the first admin is created through the /setup web wizard.
+    admin_email = os.environ.get("ADMIN_EMAIL")
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if admin_email and admin_password:
+        admin_email = admin_email.lower()
+        existing = await db.users.find_one({"email": admin_email})
+        if not existing:
+            await db.users.insert_one({"email": admin_email, "name": "Administrator",
+                                       "password_hash": hash_password(admin_password),
+                                       "role": "admin", "created_at": now_iso()})
+            logger.info("Seeded admin user")
+        elif not verify_password(admin_password, existing["password_hash"]):
+            await db.users.update_one({"email": admin_email},
+                                      {"$set": {"password_hash": hash_password(admin_password), "role": "admin"}})
     if await db.hosts.count_documents({}) == 0:
         for h in DEFAULT_HOSTS:
             doc = dict(h)
