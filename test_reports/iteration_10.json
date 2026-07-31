@@ -1,0 +1,54 @@
+{
+  "summary": "Iteration 10 formally verified FireStream and database-backed host API-key management. Backend regression: 41/41 pytest tests passed. Admin login returned access_token; authenticated GET /api/hosts exposed only has_api_key booleans; DoodStream, VOE, and FireStream all reported keys present; omitted/empty host-key updates preserved the existing key; new and replaced keys persisted without API leakage; the known FireStream file resolved online with title 'API Upload Test' and a bogus code resolved offline. Desktop Admin UI login, Hosts tab, masked saved-key editor, FireStream provider option, blank-key save, new-host creation/listing, and cleanup all passed. One responsive defect remains: the mobile Admin Hosts page overflows horizontally and places the Add Host button off-screen.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminDashboard Hosts tab",
+        "issue": "At 390px width the page scrollWidth is 813px and the Add Host button begins at x=492, so the primary action is off-screen. The fixed 256px sidebar and matching main margin leave insufficient content width.",
+        "selector": "[data-testid='add-host-button']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Admin Hosts at mobile width",
+        "issues": [
+          "Fixed desktop sidebar and main margin cause severe horizontal overflow.",
+          "Admin title, tabs, host cards, and Add Host action are clipped or outside the viewport."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/pytest_firestream.xml"
+  ],
+  "action_items": [
+    "Make DashboardLayout/AdminDashboard responsive: collapse or hide the fixed sidebar on small screens, remove the fixed main margin, and ensure tabs/cards/actions fit a 390px viewport."
+  ],
+  "critical_code_review_comments": [
+    "AdminDashboard new-host state originally omitted api_key, causing React's uncontrolled-to-controlled input warning when typing a key. Added api_key: '' to emptyHost and confirmed the warning is gone.",
+    "server.py is 875 lines, above the 700-line review threshold; split auth, hosts, mirrors, integrations, settings, and seed/background jobs into focused modules.",
+    "The DoodStream/VOE key migration only matches api_key fields that do not exist, while FireStream also handles null/empty values. Use the same null/empty-safe migration for all providers so partially migrated records are repaired.",
+    "HostInput accepts arbitrary api_provider strings. Constrain it to supported providers (for example a Literal/enum) to reject typos instead of silently falling back to HTTP probing."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/frontend/src/pages/AdminDashboard.jsx"
+  ],
+  "success_rate": {
+    "backend": "100% (41/41)",
+    "frontend": "90% (all requested desktop flows passed; mobile responsive check failed)"
+  },
+  "seed_data_creation": "Created temporary TEST_ FireStream mirrors and host records; all test mirrors and hosts were deleted and deletion was verified. The existing regression fixture also creates TEST_ user records, which cannot be removed through the current API because no user-delete endpoint exists.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 10 added TestFireStreamAndHostKeys to backend_test.py. Desktop selectors verified: login-email-input, login-password-input, login-submit-button, admin-tab-hosts, host-editor-modal, host-api-provider, host-api-key-input, save-host-button, add-host-button, and dynamic edit-host-/delete-host- IDs. Backend and desktop feature behavior is green. Recheck the Admin Hosts page at 390x844 after responsive CSS changes.",
+  "rca_of_the_issue": "The mobile failure is caused by DashboardLayout using a permanently fixed w-64 sidebar and main ml-64 while AdminDashboard retains desktop padding, non-wrapping tabs, and wide cards. At 390px, document width expands to 813px and the Add Host action renders completely beyond the right viewport edge."
+}

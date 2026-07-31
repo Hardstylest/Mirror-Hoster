@@ -8,12 +8,12 @@ import {
   Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save,
 } from "lucide-react";
 
-const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", tiers: [] };
+const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", tiers: [] };
 
 function HostEditor({ host, onClose, onSaved }) {
   const { t: tr } = useI18n();
   const [form, setForm] = useState(
-    host ? { ...host, tiers: host.tiers.map((t) => ({ ...t, countries: t.countries.join(", ") })) }
+    host ? { ...host, api_key: "", tiers: host.tiers.map((t) => ({ ...t, countries: t.countries.join(", ") })) }
          : { ...emptyHost, tiers: [{ name: "Tier 1", rate: 20, countries: "" }] }
   );
   const [saving, setSaving] = useState(false);
@@ -34,6 +34,7 @@ function HostEditor({ host, onClose, onSaved }) {
       default_rate: parseFloat(form.default_rate) || 0,
       is_active: form.is_active,
       api_provider: form.api_provider || null,
+      api_key: form.api_key ? form.api_key : null,
       tiers: form.tiers.map((t) => ({
         name: t.name,
         rate: parseFloat(t.rate) || 0,
@@ -85,8 +86,20 @@ function HostEditor({ host, onClose, onSaved }) {
               <option value="">{tr("admin.host.apiNone")}</option>
               <option value="doodstream">Doodstream API</option>
               <option value="voe">VOE API</option>
+              <option value="firestream">FireStream API</option>
             </select>
           </div>
+
+          {form.api_provider && (
+            <div>
+              <label className="text-sm text-muted-foreground">{tr("admin.host.apiKey")}</label>
+              <input data-testid="host-api-key-input" type="password" autoComplete="new-password"
+                value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                placeholder={host?.has_api_key ? "•••••••••••••" : tr("admin.host.apiKeyEnter")}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+              {host?.has_api_key && <p className="text-xs text-muted-foreground mt-1">{tr("admin.host.apiKeySet")}</p>}
+            </div>
+          )}
 
           <div>
             <div className="flex items-center justify-between mb-2">

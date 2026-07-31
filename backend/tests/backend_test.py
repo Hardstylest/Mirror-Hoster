@@ -1,7 +1,10 @@
 """MirrorStream backend API tests."""
 import os
+import re
 import uuid
 import time
+from pathlib import Path
+
 import pytest
 import requests
 
@@ -14,8 +17,13 @@ if not BASE_URL:
                 BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
 
 API = f"{BASE_URL}/api"
-ADMIN_EMAIL = "admin@mirrorstream.com"
-ADMIN_PASSWORD = "Admin@1234"
+credentials_text = Path("/app/memory/test_credentials.md").read_text(encoding="utf-8")
+email_match = re.search(r"(?im)^\s*[-*]\s*Email:\s*([^\s]+)", credentials_text)
+password_match = re.search(r"(?im)^\s*[-*]\s*Password:\s*([^\s]+)", credentials_text)
+if not email_match or not password_match:
+    raise RuntimeError("Admin email/password missing from /app/memory/test_credentials.md")
+ADMIN_EMAIL = email_match.group(1)
+ADMIN_PASSWORD = password_match.group(1)
 
 
 # ---- Fixtures ----
@@ -643,3 +651,173 @@ class TestAdSettings:
                 assert d[k] == "", f"ad {k} not reset: {d[k]!r}"
 
 
+
+
+# ---- API-key masking + FireStream integration (iteration 10) ----
+class TestFireStreamAndHostKeys:
+    """Host keys stay private and FireStream links resolve through its official API."""
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"}
+
+    @staticmethod
+    def _host_payload(host, api_key_marker=False):
+        payload = {
+            "name": host["name"],
+            "domain": host["domain"],
+            "default_rate": host["default_rate"],
+            "tiers": host.get("tiers", []),
+            "is_active": host.get("is_active", True),
+            "api_provider": host.get("api_provider"),
+        }
+        if api_key_marker is not False:
+            payload["api_key"] = api_key_marker
+        return payload
+
+    def test_admin_login_returns_access_token(self):
+        response = requests.post(
+            f"{API}/auth/login",
+            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert isinstance(data.get("access_token"), str) and data["access_token"]
+        assert data["user"]["email"] == ADMIN_EMAIL
+        assert data["user"]["role"] == "admin"
+
+    def test_authenticated_user_gets_only_masked_host_keys(self, user_creds):
+        response = requests.get(
+            f"{API}/hosts",
+            headers=self._headers(user_creds["token"]),
+        )
+        assert response.status_code == 200, response.text
+        hosts_data = response.json()
+        assert isinstance(hosts_data, list) and hosts_data
+        for host in hosts_data:
+            assert "api_key" not in host, f"Raw API key field leaked for {host.get('name')}"
+            assert isinstance(host.get("has_api_key"), bool), host
+        by_provider = {host.get("api_provider"): host for host in hosts_data}
+        for provider in ("doodstream", "voe", "firestream"):
+            assert provider in by_provider, f"Seeded provider missing: {provider}"
+            assert by_provider[provider]["has_api_key"] is True, provider
+
+    def test_existing_firestream_key_survives_omitted_and_empty_updates(self, admin_token):
+        headers = self._headers(admin_token)
+        hosts_response = requests.get(f"{API}/hosts", headers=headers)
+        assert hosts_response.status_code == 200, hosts_response.text
+        firestream = next(
+            host for host in hosts_response.json()
+            if host.get("api_provider") == "firestream"
+        )
+        assert firestream["has_api_key"] is True
+
+        omitted_payload = self._host_payload(firestream)
+        response = requests.put(
+            f"{API}/hosts/{firestream['id']}", json=omitted_payload, headers=headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["has_api_key"] is True
+        assert "api_key" not in response.json()
+
+        empty_payload = self._host_payload(firestream, "")
+        response = requests.put(
+            f"{API}/hosts/{firestream['id']}", json=empty_payload, headers=headers
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["has_api_key"] is True
+        assert "api_key" not in response.json()
+
+    def test_create_and_replace_new_host_key_without_leak(self, admin_token):
+        headers = self._headers(admin_token)
+        unique = uuid.uuid4().hex[:10]
+        payload = {
+            "name": f"TEST_FireHost_{unique}",
+            "domain": f"test-{unique}.example",
+            "default_rate": 2.5,
+            "tiers": [],
+            "is_active": True,
+            "api_provider": "firestream",
+            "api_key": f"TEST_INITIAL_{unique}",
+        }
+        response = requests.post(f"{API}/hosts", json=payload, headers=headers)
+        assert response.status_code == 200, response.text
+        created = response.json()
+        host_id = created["id"]
+        try:
+            assert created["name"] == payload["name"]
+            assert created["api_provider"] == "firestream"
+            assert created["has_api_key"] is True
+            assert "api_key" not in created
+
+            replacement = self._host_payload(created, f"TEST_REPLACEMENT_{unique}")
+            response = requests.put(
+                f"{API}/hosts/{host_id}", json=replacement, headers=headers
+            )
+            assert response.status_code == 200, response.text
+            assert response.json()["has_api_key"] is True
+            assert "api_key" not in response.json()
+
+            listed = requests.get(f"{API}/hosts", headers=headers)
+            assert listed.status_code == 200
+            persisted = next(host for host in listed.json() if host["id"] == host_id)
+            assert persisted["name"] == payload["name"]
+            assert persisted["has_api_key"] is True
+            assert "api_key" not in persisted
+        finally:
+            delete_response = requests.delete(f"{API}/hosts/{host_id}", headers=headers)
+            assert delete_response.status_code == 200
+
+    @pytest.mark.parametrize(
+        ("embed_url", "expected_status", "expected_title"),
+        [
+            ("https://firestream.to/e/1uuFmyaj", "online", "API Upload Test"),
+            ("https://firestream.to/e/zzzzznope", "offline", None),
+        ],
+    )
+    def test_firestream_link_resolution(
+        self, admin_token, embed_url, expected_status, expected_title
+    ):
+        headers = self._headers(admin_token)
+        hosts_response = requests.get(f"{API}/hosts", headers=headers)
+        assert hosts_response.status_code == 200, hosts_response.text
+        firestream = next(
+            host for host in hosts_response.json()
+            if host.get("api_provider") == "firestream"
+        )
+        create_response = requests.post(
+            f"{API}/mirrors",
+            json={
+                "title": f"TEST_FireStream_{uuid.uuid4().hex[:8]}",
+                "description": "FireStream API resolution test",
+                "links": [{"host_id": firestream["id"], "embed_url": embed_url}],
+            },
+            headers=headers,
+        )
+        assert create_response.status_code == 200, create_response.text
+        mirror = create_response.json()
+        mirror_id = mirror["id"]
+        try:
+            resolved = None
+            for _ in range(10):
+                time.sleep(2)
+                get_response = requests.get(
+                    f"{API}/mirrors/{mirror_id}", headers=headers
+                )
+                assert get_response.status_code == 200, get_response.text
+                resolved = get_response.json()
+                if resolved["links"][0]["status"] != "pending":
+                    break
+            link = resolved["links"][0]
+            assert link["status"] == expected_status, link
+            assert link["resolved_url"].endswith(embed_url.rsplit("/", 1)[-1])
+            assert link["last_checked"]
+            if expected_title:
+                assert link.get("title") == expected_title, link
+        finally:
+            delete_response = requests.delete(
+                f"{API}/mirrors/{mirror_id}", headers=headers
+            )
+            assert delete_response.status_code == 200
+            confirm = requests.get(f"{API}/mirrors/{mirror_id}", headers=headers)
+            assert confirm.status_code == 404

@@ -112,6 +112,7 @@ class HostInput(BaseModel):
     tiers: List[Tier] = []
     is_active: bool = True
     api_provider: Optional[str] = None
+    api_key: Optional[str] = None
 
 class HostLinkInput(BaseModel):
     host_id: str
@@ -244,6 +245,27 @@ def public_mirror(doc: dict) -> dict:
     doc.pop("_id", None)
     return doc
 
+def public_host(doc: dict) -> dict:
+    """Serialize a host without leaking the raw API key (only whether one is set)."""
+    doc = dict(doc)
+    doc.pop("_id", None)
+    key = doc.pop("api_key", None)
+    doc["has_api_key"] = bool(key)
+    return doc
+
+# Fallback env vars used only when a host has no api_key stored in the DB.
+KEY_ENV = {
+    "doodstream": "DOODSTREAM_API_KEY",
+    "voe": "VOE_API_KEY",
+    "firestream": "FIRESTREAM_API_KEY",
+}
+
+def resolve_api_key(provider: Optional[str], host_key: Optional[str]) -> Optional[str]:
+    if host_key:
+        return host_key
+    env_name = KEY_ENV.get(provider or "")
+    return os.environ.get(env_name) if env_name else None
+
 # ---------------------------------------------------------------------------
 # Host API integrations (Doodstream + VOE)
 # ---------------------------------------------------------------------------
@@ -267,8 +289,7 @@ def extract_file_code(url: str):
     except Exception:
         return None
 
-def voe_embed_prefix():
-    key = os.environ.get("VOE_API_KEY")
+def voe_embed_prefix(key: Optional[str]):
     if not key:
         return None
     if _voe_domain_cache["prefix"] and time.time() - _voe_domain_cache["ts"] < 300:
@@ -284,7 +305,7 @@ def voe_embed_prefix():
         logger.warning(f"VOE domain fetch failed: {e}")
     return _voe_domain_cache["prefix"]
 
-def api_resolve_link(provider: str, embed_url: str):
+def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = None):
     """Use the host's official API to get accurate status + a playable embed URL.
     Returns dict {status, url, title, thumbnail} or None to fall back to probe_url.
     """
@@ -293,7 +314,7 @@ def api_resolve_link(provider: str, embed_url: str):
         return None
     try:
         if provider == "doodstream":
-            key = os.environ.get("DOODSTREAM_API_KEY")
+            key = api_key
             if not key:
                 return None
             chk = _api_json(f"{DOOD_API}/file/check?key={key}&file_code={code}")
@@ -307,15 +328,25 @@ def api_resolve_link(provider: str, embed_url: str):
             return {"status": "online" if active else "offline",
                     "url": embed_url, "title": ires.get("title"), "thumbnail": ires.get("splash_img")}
         if provider == "voe":
-            key = os.environ.get("VOE_API_KEY")
+            key = api_key
             if not key:
                 return None
             info = _api_json(f"https://voe.sx/api/file/info?key={key}&file_code={code}")
             ires = (info.get("result") or [{}])[0]
             online = ires.get("status") == 200
-            prefix = voe_embed_prefix() or "https://voe.sx/e/"
+            prefix = voe_embed_prefix(key) or "https://voe.sx/e/"
             return {"status": "online" if online else "offline",
                     "url": f"{prefix}{code}", "title": ires.get("title"), "thumbnail": None}
+        if provider == "firestream":
+            key = api_key
+            if not key:
+                return None
+            info = _api_json(f"https://firestream.to/api/file/info?key={key}&file_code={code}")
+            ires = (info.get("result") or [{}])[0]
+            online = ires.get("status") == 200 and ires.get("encoding_status") == "completed"
+            return {"status": "online" if online else "offline",
+                    "url": f"https://firestream.to/e/{code}",
+                    "title": ires.get("title"), "thumbnail": None}
     except Exception as e:
         logger.warning(f"api_resolve_link {provider} failed: {e}")
     return None
@@ -330,10 +361,10 @@ async def resolve_mirror_links(mirror_id: str):
         host_ids = [l["host_id"] for l in links]
         providers = {}
         async for h in db.hosts.find({"id": {"$in": host_ids}}):
-            providers[h["id"]] = h.get("api_provider")
+            providers[h["id"]] = (h.get("api_provider"), resolve_api_key(h.get("api_provider"), h.get("api_key")))
         for l in links:
-            prov = providers.get(l["host_id"])
-            api = await asyncio.to_thread(api_resolve_link, prov, l["embed_url"]) if prov else None
+            prov, key = providers.get(l["host_id"], (None, None))
+            api = await asyncio.to_thread(api_resolve_link, prov, l["embed_url"], key) if prov else None
             if api:
                 l["status"] = api["status"]
                 l["resolved_url"] = api["url"]
@@ -407,7 +438,7 @@ async def me(user: dict = Depends(get_current_user)):
 @api_router.get("/hosts")
 async def list_hosts(user: dict = Depends(get_current_user)):
     hosts = await db.hosts.find({}).to_list(500)
-    return [public_mirror(h) for h in hosts]
+    return [public_host(h) for h in hosts]
 
 @api_router.post("/hosts")
 async def create_host(inp: HostInput, admin: dict = Depends(get_admin_user)):
@@ -415,16 +446,20 @@ async def create_host(inp: HostInput, admin: dict = Depends(get_admin_user)):
     doc["id"] = str(uuid.uuid4())
     doc["created_at"] = now_iso()
     await db.hosts.insert_one(doc)
-    return public_mirror(doc)
+    return public_host(doc)
 
 @api_router.put("/hosts/{host_id}")
 async def update_host(host_id: str, inp: HostInput, admin: dict = Depends(get_admin_user)):
     existing = await db.hosts.find_one({"id": host_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Host not found")
-    await db.hosts.update_one({"id": host_id}, {"$set": inp.model_dump()})
+    update = inp.model_dump()
+    # Blank api_key means "keep the existing key" (the raw key is never sent back to the UI).
+    if not update.get("api_key"):
+        update.pop("api_key", None)
+    await db.hosts.update_one({"id": host_id}, {"$set": update})
     updated = await db.hosts.find_one({"id": host_id})
-    return public_mirror(updated)
+    return public_host(updated)
 
 @api_router.delete("/hosts/{host_id}")
 async def delete_host(host_id: str, admin: dict = Depends(get_admin_user)):
@@ -761,6 +796,36 @@ async def seed():
                                {"$set": {"api_provider": "doodstream"}})
     await db.hosts.update_many({"name": "VOE", "api_provider": {"$exists": False}},
                                {"$set": {"api_provider": "voe"}})
+
+    # Migrate API keys from .env into the DB (one-time) so admins manage them in the dashboard.
+    dood_key = os.environ.get("DOODSTREAM_API_KEY")
+    if dood_key:
+        await db.hosts.update_many({"api_provider": "doodstream", "api_key": {"$exists": False}},
+                                   {"$set": {"api_key": dood_key}})
+    voe_key = os.environ.get("VOE_API_KEY")
+    if voe_key:
+        await db.hosts.update_many({"api_provider": "voe", "api_key": {"$exists": False}},
+                                   {"$set": {"api_key": voe_key}})
+
+    fire_key = os.environ.get("FIRESTREAM_API_KEY")
+    if fire_key:
+        await db.hosts.update_many({"api_provider": "firestream", "api_key": {"$in": [None, ""]}},
+                                   {"$set": {"api_key": fire_key}})
+
+    # Seed Firestream host if none exists yet.
+    if await db.hosts.count_documents({"api_provider": "firestream"}) == 0:
+        await db.hosts.insert_one({
+            "id": str(uuid.uuid4()),
+            "name": "FireStream",
+            "domain": "firestream.to",
+            "default_rate": 5.0,
+            "is_active": True,
+            "api_provider": "firestream",
+            "api_key": os.environ.get("FIRESTREAM_API_KEY", ""),
+            "tiers": [],
+            "created_at": now_iso(),
+        })
+        logger.info("Seeded FireStream host")
 
     cred = ROOT_DIR.parent / "memory" / "test_credentials.md"
     try:
