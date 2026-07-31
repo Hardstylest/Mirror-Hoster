@@ -46,6 +46,16 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection: manual POST /api/mirrors/{id}/check + background scheduler.
 - Verified: 18/18 backend tests, all critical frontend flows.
 
+## Security Hardening (2026-06) — Deployment- + Angriffsschutz-Check
+- **SSRF-Schutz**: `probe_url` löst jetzt den Ziel-Host auf und blockt private/loopback/link-local/reserved IPs (inkl. Cloud-Metadata 169.254.169.254). Redirects werden manuell + hop-weise re-validiert (kein Redirect-basiertes SSRF). Verifiziert per Unit-Test.
+- **Brute-Force härter**: zusätzlich zum per-Konto-Lockout (5/15min) gibt es jetzt einen per-IP-Lockout über alle Konten (20/15min) gegen Password-Spraying. Register per-IP gedrosselt (10/60min). Verifiziert: 401×5 → 429.
+- **X-Forwarded-For Anti-Spoofing**: `get_client_ip` nimmt den vom eigenen Proxy angehängten Eintrag (rechts, `TRUSTED_PROXY_COUNT`, Default 1) statt des spoofbaren linken Werts → Rate-Limit lässt sich nicht per Header umgehen.
+- **Cookies**: `COOKIE_SECURE` env (Default true) → Secure-Flag in Prod (HTTPS); nur für lokales HTTP-Dev auf false setzen.
+- **CORS-Fix**: Wildcard-Origin `*` wird nicht mehr mit `allow_credentials=True` kombiniert (ungültig/unsicher); SPA nutzt Bearer-Token. Für Prod echte Domain in `CORS_ORIGINS` setzen.
+- **nginx Security-Header**: X-Content-Type-Options, Referrer-Policy, X-XSS-Protection, Permissions-Policy, `server_tokens off`. Kein Frame-Deny (Player ist absichtlich einbettbar).
+- **Secrets**: `backend/.env` ist korrekt gitignored und NICHT in der Git-History → JWT_SECRET + Hoster-Zugangsdaten sind nicht im Repo. `.env.example` mit Härtungs-Hinweisen (JWT_SECRET via `openssl rand -hex 32`, SETUP_TOKEN empfohlen). docker-compose reicht COOKIE_SECURE/TRUSTED_PROXY_COUNT durch.
+- **Offene Entscheidung (User)**: Emergent-Plattform-Deploy verlangt getrackte `.env`; das widerspricht dem Security-Ziel (Secrets nicht committen). Für GitHub/Self-Host: `.env` gitignored lassen + Secrets rotieren. Nur wenn ausschließlich über Emergent deployt wird, .env tracken.
+
 ## Backlog / Next
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
