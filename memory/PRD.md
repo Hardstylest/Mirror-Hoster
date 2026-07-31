@@ -21,8 +21,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection with dashboard status badges.
 
 ## Implemented (2026-07-31)
-- **Offline-Streams-Übersichtsseite** (`/dashboard/offline`, neuer Nav-Punkt): listet alle Mirrors mit offline Hostern, zeigt pro Hoster Favicon, Name und "Zuletzt geprüft"-Zeit; Aktionen einzeln neu prüfen / Player öffnen / Mirror bearbeiten, plus "Alle neu prüfen". Nutzt `/mirrors` + `/mirrors/{id}/check`. Leerzustand wenn alles online.
-- **Auto-Offline-Prüfung im Player**: `GET /api/embed/{slug}` prüft Link-Status beim Player-Start neu, wenn er veraltet ist (`EMBED_RECHECK_SECONDS`, Standard 900s), und sortiert offline gegangene Hoster ans Ende (höchstbezahlter Online-Hoster zuerst).
+- **Offline-Link-Markierung im Mirror-Editor**: Beim Bearbeiten werden offline Hoster mit rotem "Offline"-Badge, rotem Feldrahmen und Hinweis markiert, damit der Link schnell ersetzt werden kann.
+- **FireStream Verdienst-Tiers**: offizielle CPM-Tiers eingetragen (Tier1 $40 AU/DE/US/GB, Tier2 $25, Tier3 $15, Tier4 $10, Rest $5). Backfill für bestehenden DB-Eintrag (nur wenn leer, Admin-Edits bleiben erhalten). Sichtbar unter Admin › Anbieter & Sätze.
+- **Offline-Streams-Übersichtsseite** (`/dashboard/offline`, neuer Nav-Punkt): listet Mirrors mit offline Hostern; Aktionen einzeln/alle neu prüfen, Player öffnen, bearbeiten.
+- **Auto-Offline-Prüfung im Player**: `GET /api/embed/{slug}` re-checkt veraltete Status (`EMBED_RECHECK_SECONDS`, Std. 900s) und sortiert offline ans Ende.
 - **"Key testen"-Button**: `POST /api/hosts/test-key` (Admin) validiert einen Hoster-API-Key gegen den Account-Endpunkt (Doodstream/FireStream `account/info`, VOE `settings/domain`). Button im Host-Editor testet getippten oder gespeicherten Key; Ergebnis als Toast (inkl. E-Mail/Balance). Key wird nie im Klartext zurückgegeben.
 - **Database-backed hoster API keys**: Keys aus `.env` in `hosts`-Collection, im Admin-Dashboard editierbar (maskiert, "leer lassen = behalten"). `GET /api/hosts` liefert nur `has_api_key`. `.env` bleibt Fallback.
 - **FireStream integriert** (firestream.to): Host + `api_provider="firestream"`, Online/Offline + Titel via `file/info`.

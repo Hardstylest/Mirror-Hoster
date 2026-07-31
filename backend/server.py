@@ -829,6 +829,13 @@ DEFAULT_HOSTS = [
     },
 ]
 
+FIRESTREAM_TIERS = [
+    {"name": "Tier 1", "rate": 40.0, "countries": ["AU", "DE", "US", "GB"]},
+    {"name": "Tier 2", "rate": 25.0, "countries": ["AT", "CA", "FI", "FR", "NO", "KR"]},
+    {"name": "Tier 3", "rate": 15.0, "countries": ["BE", "HR", "IE", "IT", "NL", "NZ", "PL", "ES", "SE", "JP"]},
+    {"name": "Tier 4", "rate": 10.0, "countries": ["AR", "BA", "BR", "BG", "CL", "CO", "CY", "EG", "GR", "HK", "HU", "ID", "MY", "MX", "PK", "PE", "RO", "RS", "TH", "AE", "VN"]},
+]
+
 async def seed():
     await db.users.create_index("email", unique=True)
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com").lower()
@@ -875,6 +882,10 @@ async def seed():
         await db.hosts.update_many({"api_provider": "firestream", "api_key": {"$in": [None, ""]}},
                                    {"$set": {"api_key": fire_key}})
 
+    # Backfill FireStream earning tiers (only when none are set, so admin edits are preserved).
+    await db.hosts.update_many({"api_provider": "firestream", "tiers": {"$in": [[], None]}},
+                               {"$set": {"tiers": FIRESTREAM_TIERS, "default_rate": 5.0}})
+
     # Seed Firestream host if none exists yet.
     if await db.hosts.count_documents({"api_provider": "firestream"}) == 0:
         await db.hosts.insert_one({
@@ -885,7 +896,7 @@ async def seed():
             "is_active": True,
             "api_provider": "firestream",
             "api_key": os.environ.get("FIRESTREAM_API_KEY", ""),
-            "tiers": [],
+            "tiers": FIRESTREAM_TIERS,
             "created_at": now_iso(),
         })
         logger.info("Seeded FireStream host")

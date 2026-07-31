@@ -105,6 +105,8 @@ const translations = {
     "form.created": "Mirror created",
     "form.updated": "Mirror updated",
     "form.saveChanges": "Save changes",
+    "form.offlineHost": "Offline",
+    "form.offlineHint": "This link is offline — replace it below.",
     "form.createMirror": "Create mirror",
     "form.saving": "Saving…",
     // stats
@@ -269,6 +271,8 @@ const translations = {
     "form.created": "Mirror erstellt",
     "form.updated": "Mirror aktualisiert",
     "form.saveChanges": "Änderungen speichern",
+    "form.offlineHost": "Offline",
+    "form.offlineHint": "Dieser Link ist offline – ersetze ihn unten.",
     "form.createMirror": "Mirror erstellen",
     "form.saving": "Speichern…",
     "stats.title": "Mirror-Statistiken",
