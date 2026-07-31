@@ -3,9 +3,10 @@ import { toast } from "sonner";
 import api, { faviconUrl, formatApiError } from "../lib/api";
 import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
+import { useAuth } from "../context/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff,
 } from "lucide-react";
 
 const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
@@ -186,6 +187,7 @@ const StatCard = ({ icon: Icon, label, value }) => (
 
 export default function AdminDashboard() {
   const { t } = useI18n();
+  const { user: currentUser } = useAuth();
   const [tab, setTab] = useState("overview");
   const [stats, setStats] = useState(null);
   const [hosts, setHosts] = useState([]);
@@ -240,6 +242,24 @@ export default function AdminDashboard() {
   };
 
   const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString(); } catch { return iso; } };
+
+  const changeRole = async (u) => {
+    const newRole = u.role === "admin" ? "user" : "admin";
+    try {
+      await api.put(`/admin/users/${u.id}/role`, { role: newRole });
+      toast.success(t("admin.users.roleUpdated"));
+      load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+
+  const deleteUser = async (u) => {
+    if (!window.confirm(t("admin.users.deleteConfirm"))) return;
+    try {
+      await api.delete(`/admin/users/${u.id}`);
+      toast.success(t("admin.users.deleted"));
+      load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
 
   const tabs = [
     { id: "overview", label: t("admin.tab.overview") },
@@ -325,19 +345,43 @@ export default function AdminDashboard() {
                   <th className="text-left px-5 py-3 font-medium">{t("admin.users.email")}</th>
                   <th className="text-left px-5 py-3 font-medium">{t("admin.users.role")}</th>
                   <th className="text-left px-5 py-3 font-medium">{t("admin.users.mirrors")}</th>
+                  <th className="text-right px-5 py-3 font-medium">{t("admin.users.actions")}</th>
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
-                  <tr key={u.id} className="border-t border-border">
-                    <td className="px-5 py-3">{u.name}</td>
+                {users.map((u) => {
+                  const isSelf = currentUser && u.id === currentUser.id;
+                  return (
+                  <tr key={u.id} className="border-t border-border" data-testid={`user-row-${u.id}`}>
+                    <td className="px-5 py-3">{u.name}{isSelf && <span className="ml-2 text-xs text-muted-foreground">({t("admin.users.you")})</span>}</td>
                     <td className="px-5 py-3 text-muted-foreground">{u.email}</td>
                     <td className="px-5 py-3">
                       <span className={`text-xs px-2 py-0.5 rounded ${u.role === "admin" ? "bg-brand/10 text-brand" : "bg-secondary text-muted-foreground"}`}>{u.role}</span>
                     </td>
                     <td className="px-5 py-3">{u.mirror_count}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => changeRole(u)}
+                          disabled={isSelf}
+                          data-testid={`toggle-role-${u.id}`}
+                          title={u.role === "admin" ? t("admin.users.revokeAdmin") : t("admin.users.makeAdmin")}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs border border-border hover:border-brand hover:text-brand disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          {u.role === "admin" ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+                          {u.role === "admin" ? t("admin.users.revokeAdmin") : t("admin.users.makeAdmin")}
+                        </button>
+                        <button
+                          onClick={() => deleteUser(u)}
+                          disabled={isSelf}
+                          data-testid={`delete-user-${u.id}`}
+                          title={t("admin.users.delete")}
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-offline hover:bg-secondary disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                ))}
+                );})}
               </tbody>
             </table>
           </div>

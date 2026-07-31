@@ -134,6 +134,9 @@ class TestKeyInput(BaseModel):
 class RefreshTiersInput(BaseModel):
     host_id: Optional[str] = None
 
+class UserRoleInput(BaseModel):
+    role: str
+
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -1083,6 +1086,35 @@ async def admin_users(admin: dict = Depends(get_admin_user)):
                     "role": u.get("role", "user"), "created_at": u.get("created_at"),
                     "mirror_count": mirror_count})
     return out
+
+@api_router.put("/admin/users/{user_id}/role")
+async def set_user_role(user_id: str, inp: UserRoleInput, admin: dict = Depends(get_admin_user)):
+    if inp.role not in ("admin", "user"):
+        raise HTTPException(status_code=400, detail="Invalid role")
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="You cannot change your own role")
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="User not found")
+    res = await db.users.update_one({"_id": oid}, {"$set": {"role": inp.role}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True, "role": inp.role}
+
+@api_router.delete("/admin/users/{user_id}")
+async def delete_user(user_id: str, admin: dict = Depends(get_admin_user)):
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not await db.users.find_one({"_id": oid}):
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.mirrors.delete_many({"created_by": user_id})
+    await db.users.delete_one({"_id": oid})
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------------------

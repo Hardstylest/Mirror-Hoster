@@ -21,12 +21,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection with dashboard status badges.
 
 ## Implemented (2026-07-31)
-- **FireStream Auto-Fix (Session-Login)**: FireStream unterstützt jetzt Auto-Fix. Backend loggt sich per Session (cookie) mit in der DB gespeicherten Login-Daten ein (`POST firestream.to/api/auth/login`), durchsucht `My Videos` per Titel/Dateiname, verifiziert online via `file/info` und ersetzt den Embed. Login-Daten (E-Mail + Passwort) sind im Admin-Host-Editor editierbar (Passwort maskiert, `has_login`), aus `.env` vorbefüllt.
-- **Bulk-Auto-Fix**: Button "Alle auto-fixen" auf der Offline-Seite repariert alle unterstützten Offline-Links auf einmal (parallel), Toast mit Erfolgszähler.
-- **Offline-Badge im Menü**: Roter Zähler neben "Offline-Streams" = Anzahl Mirrors mit Offline-Link (`offline_mirrors` in `/stats/dashboard`), live-Update via `offline-updated`-Event.
-- **Doodstream Tier-Auto-Update**: Scraper für `doodstream.co/earn-money` (JS-Vars `data_countriesN`/`data_amountN` + Tier5/Default aus Text). Jetzt alle 3 Hoster automatisch (VOE, FireStream, Doodstream), täglich + manueller Button.
-- **Auto-Fix (Doodstream & VOE)** + **Tier-Auto-Update (VOE/FireStream)** + Offline-Übersicht + Editor-Markierung + Player-Recheck (s. vorher).
-- Verifiziert: alle Flows per curl + Screenshot (FireStream/Doodstream/VOE Auto-Fix, Bulk-Fix→Leerzustand, Badge=2, Tier-Scrape für alle 3, Login-Editor).
+- **Benutzerverwaltung im Admin-Bereich**: Neue Aktionen im Tab "Benutzer" — Rolle umschalten (`PUT /api/admin/users/{id}/role`, "Zum Admin machen"/"Admin entziehen") und Benutzer löschen (`DELETE /api/admin/users/{id}`, löscht auch dessen Mirrors). Selbstschutz: eigene Rolle/Account kann nicht geändert/gelöscht werden (Buttons deaktiviert + Backend 400).
+- **FireStream Auto-Fix (Session-Login)** + Login-Daten im Admin editierbar.
+- **Bulk-Auto-Fix**, **Offline-Badge im Menü**, **Doodstream Tier-Auto-Update** (alle 3 Hoster täglich).
+- Verifiziert: promote/demote/delete + Selbstschutz per curl, UI per Screenshot.
 - **"Key testen"-Button**: `POST /api/hosts/test-key` (Admin) validiert einen Hoster-API-Key gegen den Account-Endpunkt (Doodstream/FireStream `account/info`, VOE `settings/domain`). Button im Host-Editor testet getippten oder gespeicherten Key; Ergebnis als Toast (inkl. E-Mail/Balance). Key wird nie im Klartext zurückgegeben.
 - **Database-backed hoster API keys**: Keys aus `.env` in `hosts`-Collection, im Admin-Dashboard editierbar (maskiert, "leer lassen = behalten"). `GET /api/hosts` liefert nur `has_api_key`. `.env` bleibt Fallback.
 - **FireStream integriert** (firestream.to): Host + `api_provider="firestream"`, Online/Offline + Titel via `file/info`.
