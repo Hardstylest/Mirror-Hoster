@@ -1310,11 +1310,30 @@ def _lm_scrape(text: str):
                     failed.append(slug)
     return {"playlists": list(dict.fromkeys(pls)), "embeds_found": len(embeds), "results": results, "failed": failed}
 
+_IMPORT_INFLIGHT = set()
+_IMPORT_LAST = {}
+IMPORT_COOLDOWN = 8  # seconds between imports per user (anti resource-exhaustion)
+
 @api_router.post("/mirrors/import")
 async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_current_user)):
     text = (inp.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Please paste at least one ListMirror playlist or embed link.")
+    uid = user["id"]
+    if uid in _IMPORT_INFLIGHT:
+        raise HTTPException(status_code=429, detail="An import is already running for your account. Please wait for it to finish.")
+    if time.time() - _IMPORT_LAST.get(uid, 0) < IMPORT_COOLDOWN:
+        raise HTTPException(status_code=429, detail="Please wait a few seconds before starting another import.")
+    _IMPORT_INFLIGHT.add(uid)
+    try:
+        return await _run_import(inp, user)
+    finally:
+        _IMPORT_INFLIGHT.discard(uid)
+        _IMPORT_LAST[uid] = time.time()
+
+
+async def _run_import(inp: MirrorImportInput, user: dict):
+    text = (inp.text or "").strip()
     scraped = await asyncio.to_thread(_lm_scrape, text)
     if not scraped["results"]:
         raise HTTPException(status_code=400, detail="No importable embeds found. Paste ListMirror playlist or embed links (e.g. https://listmirror.com/embed/XXXX).")
@@ -1405,9 +1424,11 @@ async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_curren
             "source_ref": source_ref,
         }
         await db.mirrors.insert_one(doc)
-        asyncio.create_task(resolve_mirror_links(doc["id"]))
+        resolve_ids.append(doc["id"])
         imported += 1
 
+    if resolve_ids:
+        asyncio.create_task(resolve_many(resolve_ids))
     return {
         "ok": True,
         "imported": imported,
@@ -2350,6 +2371,11 @@ async def restore_backup_zip(data: bytes, password: str = "") -> dict:
     if password:
         z.setpassword(password.encode("utf-8"))
     with z:
+        # Decompression-bomb guard: reject archives whose uncompressed size is unreasonable.
+        MAX_UNCOMPRESSED = 1024 * 1024 * 1024  # 1 GB
+        total_uncompressed = sum(getattr(i, "file_size", 0) for i in z.infolist())
+        if total_uncompressed > MAX_UNCOMPRESSED:
+            raise HTTPException(status_code=400, detail="Backup archive is too large when decompressed (possible zip bomb).")
         is_encrypted = any((getattr(i, "flag_bits", 0) & 0x1) for i in z.infolist())
         if is_encrypted and not password:
             raise HTTPException(status_code=400, detail="This backup is encrypted. Please enter the backup password.")
@@ -2628,3 +2654,5 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+if _cors_wildcard:
+    logger.warning("CORS is set to wildcard '*'. Set CORS_ORIGINS to your exact frontend domain(s) in production.")

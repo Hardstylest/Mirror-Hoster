@@ -136,6 +136,12 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 
 ## Cover-Vorschau bei Mouseover (2026-06)
 - Im Dashboard („Meine Mirrors") zeigt das Überfahren des Cover-Thumbnails eine vergrößerte, schwebende Vorschau (CSS `group/cover` hover, w-80, z-50, `object-contain`, Schatten). Kleines Cover bekommt beim Hover einen Marken-Ring + `cursor-zoom-in`. testid `cover-{id}`. Verifiziert per Screenshot.
+
+## Security-Audit Fixes (2026-06)
+- Audit-Ergebnis: CONDITIONAL PASS. Behoben: SEC-001 (MEDIUM) + H3/H4 (LOW). H1/H2 bewusst belassen (Admin-Werbe-HTML; Test-Creds nur intern).
+- **SEC-001 (Import-Überlastung)**: Pro-Nutzer-Sperre (`_IMPORT_INFLIGHT`) + Cooldown (`IMPORT_COOLDOWN=8s`) → rascher Zweit-Import gibt 429. Body in `_run_import` ausgelagert, Wrapper hält Lock via try/finally. Batch-Resolve korrigiert: Insert- UND Update-Pfad sammeln `resolve_ids` und starten EINEN gedrosselten `resolve_many`. Verifiziert: 1. Import ok, 2. sofort → 429.
+- **H3 (Dekompressionsbombe)**: `restore_backup_zip` prüft unkomprimierte Gesamtgröße gegen 1 GB → 400 bei Überschreitung. Normale Backups (~0,5 MB) passieren.
+- **H4 (CORS)**: Startup-Warnung bei Wildcard `*` (in Produktion `CORS_ORIGINS` auf exakte Domain setzen). Mechanismus sicher (Wildcard ohne Credentials).
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
 - P2: Email verification + password reset UI; referral/earnings estimate per mirror.
