@@ -1282,13 +1282,11 @@ async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_curren
                 return h
         return None
 
-    imported, skipped_existing = 0, 0
+    imported, updated, skipped_existing = 0, 0, 0
     created_hosts, skipped_hosts = [], {}
     for emb in scraped["results"]:
         source_ref = f"listmirror:{emb['slug']}"
-        if await db.mirrors.find_one({"created_by": user["id"], "source_ref": source_ref}):
-            skipped_existing += 1
-            continue
+        existing = await db.mirrors.find_one({"created_by": user["id"], "source_ref": source_ref})
         links = []
         for (url, label) in emb["mirrors"]:
             domain = _lm_domain(url)
@@ -1322,11 +1320,32 @@ async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_curren
         if not links:
             continue
         enriched = await enrich_host_links(links)
+        if existing:
+            # Update in place: keep the same id/slug/views so external embeds and DB
+            # references stay stable. Preserve status when a host's URL is unchanged.
+            prev = {l["host_id"]: l for l in existing.get("links", [])}
+            for l in enriched:
+                p = prev.get(l["host_id"])
+                unchanged = p and p.get("embed_url") == l["embed_url"]
+                l["status"] = p["status"] if unchanged else "pending"
+                l["last_checked"] = p["last_checked"] if unchanged else None
+                l["resolved_url"] = p.get("resolved_url") if unchanged else None
+            await db.mirrors.update_one({"id": existing["id"]},
+                                        {"$set": {"title": emb["title"], "links": enriched}})
+            asyncio.create_task(resolve_mirror_links(existing["id"]))
+            updated += 1
+            continue
         for l in enriched:
             l["status"] = "pending"; l["last_checked"] = None
+        # Reuse the ListMirror embed ID as our public slug so IDs stay identical
+        # (swap only the domain in existing site embeds). Guard against collisions.
+        slug = emb["slug"]
+        clash = await db.mirrors.find_one({"slug": slug})
+        if clash:
+            slug = f"{slug}-{secrets.token_urlsafe(2)}"
         doc = {
             "id": str(uuid.uuid4()),
-            "slug": secrets.token_urlsafe(6),
+            "slug": slug,
             "title": emb["title"],
             "description": "",
             "links": enriched,
@@ -1343,6 +1362,7 @@ async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_curren
     return {
         "ok": True,
         "imported": imported,
+        "updated": updated,
         "skipped_existing": skipped_existing,
         "embeds_found": scraped["embeds_found"],
         "failed_count": len(scraped["failed"]),

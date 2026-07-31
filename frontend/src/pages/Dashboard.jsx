@@ -94,7 +94,7 @@ function ImportModal({ onClose, onImported }) {
 
           {result && (
             <div className="mt-2 rounded-md border border-border bg-surface/50 p-4 space-y-2 text-sm" data-testid="import-result">
-              <p className="flex items-center gap-2 text-online font-medium"><CheckCircle2 size={16} /> {result.imported} imported · {result.skipped_existing} skipped (already imported)</p>
+              <p className="flex items-center gap-2 text-online font-medium"><CheckCircle2 size={16} /> {result.imported} imported · {result.updated || 0} updated · {result.skipped_existing || 0} skipped</p>
               {result.embeds_found != null && <p className="text-muted-foreground">Embeds found: {result.embeds_found}{result.failed_count ? ` · ${result.failed_count} could not be read` : ""}</p>}
               {result.created_hosts?.length > 0 && (
                 <div>
