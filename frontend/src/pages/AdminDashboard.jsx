@@ -682,8 +682,8 @@ export default function AdminDashboard() {
               </div>
               <p className="mt-1 text-sm text-muted-foreground">
                 {lang === "de"
-                  ? "IPs mit auffällig vielen fehlgeschlagenen Logins oder Registrierungen. Ab 5 Fehlversuchen wird die IP automatisch 15 Min. gesperrt."
-                  : "IPs with an unusual number of failed logins or sign-ups. From 5 failures the IP is auto-locked for 15 min."}
+                  ? "IPs mit auffällig vielen fehlgeschlagenen Logins oder Registrierungen. Ein Konto wird nach 5 Fehlversuchen 15 Min. gesperrt; eine IP wird nach 20 Login- bzw. 10 Registrierungs-Fehlversuchen blockiert."
+                  : "IPs with an unusual number of failed logins or sign-ups. An account locks after 5 failures for 15 min; an IP is blocked after 20 login or 10 sign-up failures."}
               </p>
               {loginAlerts.length === 0 ? (
                 <p className="mt-4 text-sm text-muted-foreground" data-testid="no-login-alerts">

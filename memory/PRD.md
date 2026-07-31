@@ -64,6 +64,16 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Verifiziert per curl mit Cloudflare-Test-Keys: Token-Pass→200, Token-fehlt→400, Fail-Secret→400, Secret nicht geleakt, blank=keep. Frontend: Gate+Widget rendern (Screenshot), Disabled-State sauber.
 - Standard: DEAKTIVIERT (leere Keys). User trägt eigene Cloudflare-Keys im Admin-Panel ein und aktiviert dann.
 
+## Neue Hoster + Login-Warnung + Anti-Adblock (2026-06)
+- **5 neue Hoster** voll integriert (Online/Offline via API, „Key testen", Auto-Fix per Namenssuche): **Playmate, Vidara, Streamtape, Vinovo, VidNest**. Backend: `api_resolve_link`/`validate_api_key`/`find_replacement` + Autofix-Allowlist erweitert; `NEW_HOSTS` geseedet. Streamtape braucht API-Login + API-Key (Login-Feld im Host-Editor).
+- **Tiers**: Vidara/Vinovo/VidNest werden automatisch von den Earn-Seiten gescraped (täglicher Job, `TIER_SCRAPERS`), getestet ✓. Playmate-Earn-Tabelle ist client-rendered → nicht server-scrapebar; Playmate-Tiers sind akkurat geseedet (im Admin editierbar). Streamtape hat keine feste CPM-Tabelle → flache Default-Rate.
+- **Login-Warnung** (Admin → Sicherheit): `GET/DELETE /api/admin/login-alerts` listet verdächtige IPs (Login/Registrierung) mit Fehlversuch-Zähler + „Entsperren". Lock-Status respektiert Schwellen (Konto 5, IP-Login 20, Registrierung 10).
+- **Anti-Adblock** (Admin-Schalter, Player sperren): `AdblockGate.jsx` (Bait-Element-Erkennung) blockiert den Player bis Adblock aus; Setting `antiadblock_enabled`. Standard: AUS.
+- **Security-Fixes aus Test**: Autofix für neue Provider erreichbar; kein API-Key-Leak in Fehlermeldungen; Mobile-Layout Security-Tab (min-w-0) ohne Overflow; Secret nie im GET /settings. Getestet iteration_13 + iteration_14 (Backend 10/10, Frontend-Fixes 100%).
+
+## NOCH OFFEN (nächster Schritt)
+- **VPN/Proxy-Schutz via proxycheck.io**: vom User gewünscht (Key-Feld im Admin, aus wenn kein Key, Player sperren bei VPN). NOCH NICHT gebaut — braucht integration_expert-Playbook + kostenlosen proxycheck.io-Key vom User.
+
 ## Backlog / Next
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
