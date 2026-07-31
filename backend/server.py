@@ -1520,6 +1520,26 @@ async def cleanup_mirrors(inp: CleanupInput, admin: dict = Depends(get_admin_use
             await db.mirrors.update_one({"id": op[1]}, {"$set": {"links": op[2]}})
     return result
 
+@api_router.delete("/mirrors/{mirror_id}/link/{host_id}")
+async def delete_mirror_link(mirror_id: str, host_id: str, user: dict = Depends(get_current_user)):
+    """Remove a single host link from a mirror (e.g. a dead host). If it was the last
+    link, the whole mirror is deleted."""
+    m = await db.mirrors.find_one({"id": mirror_id})
+    if not m:
+        raise HTTPException(status_code=404, detail="Mirror not found")
+    if user.get("role") != "admin" and m["created_by"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    links = m.get("links", [])
+    keep = [l for l in links if l.get("host_id") != host_id]
+    if len(keep) == len(links):
+        raise HTTPException(status_code=404, detail="Host link not found")
+    if not keep:
+        await db.mirrors.delete_one({"id": mirror_id})
+        await db.views.delete_many({"mirror_id": mirror_id})
+        return {"deleted_mirror": True, "remaining": 0}
+    await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": keep}})
+    return {"deleted_mirror": False, "remaining": len(keep)}
+
 @api_router.post("/mirrors/{mirror_id}/check")
 async def check_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
     m = await db.mirrors.find_one({"id": mirror_id})

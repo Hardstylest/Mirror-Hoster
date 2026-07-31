@@ -128,6 +128,11 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Bulk-Löschen (Dashboard)**: Checkbox pro Mirror + „Alle auswählen (Seite)" + „Ausgewählte löschen (n)". `POST /api/mirrors/bulk-delete {ids}` (User-scoped, Admin=alle). testids: `select-{id}`, `select-all-toggle`, `bulk-delete-button`.
 - **Mirror-Bereinigung (Admin → Anbieter)**: Entfernt Hoster-Links aus allen Mirrors; Mirrors mit 0 Links werden gelöscht. `POST /api/admin/mirrors/cleanup {host_id?, offline_only, preview}`. Filter: Hoster-Dropdown (oder „Alle Hoster" → nur Offline erlaubt, Guard 400) + „Nur Offline-Links" + Vorschau vor Ausführung. testids: `cleanup-panel`, `cleanup-host-select`, `cleanup-offline-toggle`, `cleanup-preview-button`, `cleanup-run-button`.
 - Verifiziert (curl + Screenshot): Preview-Zahlen korrekt, Guard greift, beide UIs rendern & funktionieren. Keine destruktive Löschung auf Echtdaten ausgeführt.
+
+## Offline-Hoster direkt entfernen (2026-06)
+- Auf der **Offline-Streams-Seite** hat jeder Offline-Hoster-Link jetzt einen „Entfernen"-Button (neben „Auto-Fix"), um den toten Hoster direkt zu löschen — ohne den Mirror erst zu editieren.
+- Endpoint `DELETE /api/mirrors/{mirror_id}/link/{host_id}` (User-scoped/Admin): entfernt genau diesen Host-Link; war es der letzte Link, wird der ganze Mirror gelöscht (+ views). Rückgabe `{deleted_mirror, remaining}`. testid `remove-link-{mid}-{hid}`, i18n `offline.removeLink/removeConfirm/removed/removedMirror` (DE/EN, Bestätigungsdialog).
+- Verifiziert: 404 bei falschem Host, `remaining:1` nach 1. Löschung, `deleted_mirror:true` nach letzter, Wegwerf-Mirror sauber weg; UI zeigt 9 „Entfernen"-Buttons.
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
 - P2: Email verification + password reset UI; referral/earnings estimate per mirror.

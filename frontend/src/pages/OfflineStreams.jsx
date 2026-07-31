@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import api, { faviconUrl } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
-import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench, History } from "lucide-react";
+import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench, History, Trash2 } from "lucide-react";
 
 const fmtDate = (iso) => {
   if (!iso) return null;
@@ -22,6 +22,7 @@ export default function OfflineStreams() {
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(null);
   const [fixing, setFixing] = useState(null);
+  const [removing, setRemoving] = useState(null);
   const [recheckingAll, setRecheckingAll] = useState(false);
   const [bulkFixing, setBulkFixing] = useState(false);
   const [logs, setLogs] = useState([]);
@@ -76,6 +77,17 @@ export default function OfflineStreams() {
       else toast.error(t("offline.autofixNone"));
     } catch { toast.error(t("offline.autofixNone")); }
     setFixing(null);
+  };
+
+  const removeLink = async (mirrorId, hostId, hostName) => {
+    if (!window.confirm(t("offline.removeConfirm").replace("{host}", hostName))) return;
+    setRemoving(`${mirrorId}:${hostId}`);
+    try {
+      const { data } = await api.delete(`/mirrors/${mirrorId}/link/${hostId}`);
+      toast.success(data.deleted_mirror ? t("offline.removedMirror") : t("offline.removed"));
+      await load();
+    } catch { toast.error(t("dash.checkFailed")); }
+    setRemoving(null);
   };
 
   const bulkAutofix = async () => {
@@ -168,6 +180,15 @@ export default function OfflineStreams() {
                             className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-brand/40 text-brand hover:bg-brand hover:text-black">
                             <Wrench size={12} className={busy ? "animate-spin" : ""} />
                             {busy ? t("offline.autofixing") : t("offline.autofix")}
+                          </button>
+                          <button
+                            onClick={() => removeLink(m.id, l.host_id, l.host_name)}
+                            disabled={removing === `${m.id}:${l.host_id}`}
+                            data-testid={`remove-link-${m.id}-${l.host_id}`}
+                            title={t("offline.removeLink")}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border border-offline/40 text-offline hover:bg-offline hover:text-white disabled:opacity-40 transition-colors">
+                            <Trash2 size={12} className={removing === `${m.id}:${l.host_id}` ? "animate-spin" : ""} />
+                            {t("offline.removeLink")}
                           </button>
                         </div>
                       );})}
