@@ -1,0 +1,81 @@
+{
+  "summary": "Iteration 13 completed targeted and full-stack validation of the five new hosters, host editor, key-test behavior, Security tab, Login-Warnungen, Anti-Adblock persistence, secret masking, mirror creation, public player, and dashboard regression. Targeted backend tests passed 9/9; full regression passed 62/63, with the known credentialed-CORS preflight failure. Desktop UI flows passed. Mobile Security remains severely horizontally clipped.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "OPTIONS /api/*",
+        "issue": "Credentialed CORS still fails through the public deployment: preflight returns Access-Control-Allow-Origin: * and omits Access-Control-Allow-Credentials. FastAPI is also configured from CORS_ORIGINS='*'.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "/api/mirrors/{mirror_id}/autofix/{host_id}",
+        "issue": "The endpoint allowlist still accepts only doodstream/voe/firestream, so Playmate, Vidara, Streamtape, Vinovo, and VidNest are unconditionally rejected as unsupported even though find_replacement implements them.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/admin/login-alerts",
+        "issue": "Alert lock state is inaccurate: after 3 failed logins the UI/API showed locked=true/gesperrt, although login enforcement uses 5 attempts per account and 20 per IP. locked_until is written on every failure and the alert endpoint does not apply the threshold when deriving locked."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminDashboard Security tab",
+        "issue": "At 390px, document width is 756px and security-panel is 672px wide with x=-334; the left half of Turnstile, Anti-Adblock, and Login-Warnungen content is clipped.",
+        "selector": "[data-testid='security-panel']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Login-Warnungen status display",
+        "issue": "The Security tab labels an IP as 'gesperrt' after only 3 failures because it trusts the backend's inaccurate locked flag.",
+        "affected_selectors": ["[data-testid^='login-alert-']"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "Admin > Sicherheit at 390x844",
+        "issues": [
+          "Page-level horizontal overflow reaches 756px on a 390px viewport.",
+          "Security panel is shifted left off-screen, making labels and controls partly unreadable/unusable."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_iteration_13_targeted.xml",
+    "/app/test_reports/pytest/pytest_iteration_13_auth.xml",
+    "/app/test_reports/pytest/pytest_results_iteration_13_final.xml"
+  ],
+  "action_items": [
+    "Configure explicit allowed frontend origin(s) at ingress and FastAPI, with Access-Control-Allow-Credentials: true for credentialed requests.",
+    "Extend autofix_link's provider allowlist and provider-specific credential validation to the five new providers so their implemented find_replacement branches are reachable.",
+    "Derive Login-Warnung locked status using the same thresholds as login enforcement, and align German UI text with the actual per-account/per-IP limits.",
+    "Fix mobile Admin Security layout so the page and panel remain within 390px without negative positioning or page-level horizontal overflow.",
+    "Ensure provider request exceptions and logs redact API keys embedded in query-string URLs."
+  ],
+  "critical_code_review_comments": [
+    "validate_api_key and api_resolve_link interpolate API keys into URLs; returning/logging raw requests exceptions can expose the full query URL. Redact credentials before sending toast messages or logs.",
+    "get_current_user still chooses the cookie before an explicit Bearer header, so mismatched credentials can silently act as the cookie identity.",
+    "server.py is 1859 lines, far above the 700-line threshold; split auth/security, host integrations, mirrors, settings, admin users, and jobs into focused modules.",
+    "Static analysis reports three duplicate NAME_TO_ISO keys in server.py, and AdminDashboard.jsx fails ESLint on an unescaped quote in the Streamtape help text.",
+    "The prior fix-log regression test depended on pre-seeded history and failed when the collection was validly empty; it was corrected to validate zero-or-more response entries."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {
+    "backend": "98.4% (62/63 full regression; new-feature target 9/9)",
+    "frontend": "95% (all requested desktop/E2E flows passed; mobile Security layout failed)"
+  },
+  "seed_data_creation": "Created temporary TEST_ users, hosts, mirrors, failed-login counters, and UI mirror data. Users/hosts/mirrors and login alerts were cleaned; Anti-Adblock and Turnstile were left false. Existing auto-fix regression creates history rows for which no cleanup API exists.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Desktop verified: admin login, exactly 8 seeded hosters, all 8 provider options, Streamtape API-Login, FireStream login block, disabled no-key test button, all Security sections, warning clear, Anti-Adblock true/false persistence, /e/<slug>, and dashboard. Final public settings have antiadblock_enabled=false and turnstile_enabled=false. Re-test CORS, new-provider autofix reachability, accurate locked status, and Security at 390px.",
+  "rca_of_the_issue": "CORS is intercepted/configured as wildcard without credentials. New-provider auto-fix code is unreachable because autofix_link retains the old three-provider guard. Login alerts mark any future locked_until as locked even though enforcement separately checks count thresholds. Mobile overflow comes from desktop-width admin content/tab layout expanding and shifting the security panel outside the viewport."
+}

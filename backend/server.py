@@ -139,6 +139,7 @@ class TestKeyInput(BaseModel):
     api_provider: Optional[str] = None
     api_key: Optional[str] = None
     host_id: Optional[str] = None
+    login_email: Optional[str] = None
 
 class RefreshTiersInput(BaseModel):
     host_id: Optional[str] = None
@@ -427,7 +428,7 @@ def voe_embed_prefix(key: Optional[str]):
         logger.warning(f"VOE domain fetch failed: {e}")
     return _voe_domain_cache["prefix"]
 
-def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = None):
+def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = None, login: Optional[str] = None):
     """Use the host's official API to get accurate status + a playable embed URL.
     Returns dict {status, url, title, thumbnail} or None to fall back to probe_url.
     """
@@ -469,11 +470,61 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             return {"status": "online" if online else "offline",
                     "url": f"https://firestream.to/e/{code}",
                     "title": ires.get("title"), "thumbnail": None}
+        if provider == "playmate":
+            if not api_key:
+                return None
+            info = _api_json(f"https://api.playmate.to/file/info?key={api_key}&file_code={code}")
+            ires = (info.get("result") or [{}])[0]
+            online = ires.get("status") == 200 and str(ires.get("canplay")) in ("1", "True", "true")
+            return {"status": "online" if online else "offline",
+                    "url": f"https://playmate.to/e/{code}",
+                    "title": ires.get("name") or ires.get("title"), "thumbnail": None}
+        if provider == "vidara":
+            if not api_key:
+                return None
+            info = _api_json(f"https://api.vidara.so/v1/video/info?api_key={api_key}&filecode={code}")
+            res = info.get("result")
+            ires = (res[0] if isinstance(res, list) else res) or {}
+            online = str(ires.get("status")) in ("200", "active") or str(ires.get("canplay")) in ("1", "True", "true")
+            return {"status": "online" if online else "offline",
+                    "url": f"https://vidara.so/e/{code}",
+                    "title": ires.get("title") or ires.get("name"), "thumbnail": None}
+        if provider == "streamtape":
+            if not (api_key and login):
+                return None
+            info = _api_json(f"https://api.streamtape.com/file/info?file={code}&login={login}&key={api_key}")
+            res = info.get("result") or {}
+            entry = res.get(code) if isinstance(res, dict) else None
+            online = bool(entry) and entry.get("status") == 200
+            return {"status": "online" if online else "offline",
+                    "url": f"https://streamtape.com/e/{code}",
+                    "title": (entry or {}).get("name"), "thumbnail": None}
+        if provider == "vinovo":
+            if not api_key:
+                return None
+            info = _api_json(f"https://api.vinovo.si/api/file/info?key={api_key}&file_code={code}")
+            res = info.get("result") or []
+            ires = (res[0] if isinstance(res, list) else res) or {}
+            st = str(ires.get("status"))
+            online = st in ("200", "Active") or str(ires.get("canplay")) in ("1", "True", "true")
+            return {"status": "online" if online else "offline",
+                    "url": f"https://vinovo.si/e/{code}",
+                    "title": ires.get("title") or ires.get("name"), "thumbnail": ires.get("single_img")}
+        if provider == "vidnest":
+            if not api_key:
+                return None
+            info = _api_json(f"https://vidnest.io/api/file/info?key={api_key}&file_code={code}")
+            res = info.get("result") or []
+            ires = (res[0] if isinstance(res, list) else res) or {}
+            online = ires.get("status") == 200 and str(ires.get("canplay")) in ("1", "True", "true")
+            return {"status": "online" if online else "offline",
+                    "url": f"https://vidnest.io/e/{code}",
+                    "title": ires.get("file_title") or ires.get("title"), "thumbnail": ires.get("player_img")}
     except Exception as e:
         logger.warning(f"api_resolve_link {provider} failed: {e}")
     return None
 
-def validate_api_key(provider: Optional[str], key: Optional[str]) -> dict:
+def validate_api_key(provider: Optional[str], key: Optional[str], login: Optional[str] = None) -> dict:
     """Check a hoster API key against the provider's account endpoint. Never returns the key."""
     if not key:
         return {"ok": False, "message": "No API key set"}
@@ -495,6 +546,28 @@ def validate_api_key(provider: Optional[str], key: Optional[str]) -> dict:
             if d.get("status") == 200 and r:
                 return {"ok": True, "message": "Valid key", "email": r.get("email"), "balance": r.get("balance")}
             return {"ok": False, "message": d.get("msg") or "Invalid key"}
+        if provider in ("playmate", "vinovo", "vidnest"):
+            base = {"playmate": "https://api.playmate.to", "vinovo": "https://api.vinovo.si/api",
+                    "vidnest": "https://vidnest.io/api"}[provider]
+            d = _api_json(f"{base}/account/info?key={key}")
+            r = d.get("result") or {}
+            if d.get("status") == 200 and r:
+                return {"ok": True, "message": "Valid key", "email": r.get("email"), "balance": r.get("balance")}
+            return {"ok": False, "message": d.get("msg") or "Invalid key"}
+        if provider == "vidara":
+            d = _api_json(f"https://api.vidara.so/v1/user/info?api_key={key}")
+            r = d.get("result") or {}
+            if d.get("status") == 200 and r:
+                return {"ok": True, "message": "Valid key", "email": r.get("email"), "balance": r.get("balance")}
+            return {"ok": False, "message": d.get("msg") or "Invalid key"}
+        if provider == "streamtape":
+            if not login:
+                return {"ok": False, "message": "Streamtape needs API-Login + API-Key"}
+            d = _api_json(f"https://api.streamtape.com/account/info?login={login}&key={key}")
+            r = d.get("result") or {}
+            if d.get("status") == 200 and r:
+                return {"ok": True, "message": "Valid key", "email": r.get("email"), "balance": None}
+            return {"ok": False, "message": d.get("msg") or "Invalid login/key"}
         return {"ok": False, "message": "No key validation available for this provider"}
     except Exception as e:
         return {"ok": False, "message": f"Request failed: {e}"}
@@ -525,6 +598,8 @@ NAME_TO_ISO = {
     "pakistan": "PK", "philippines": "PH", "ukraine": "UA", "israel": "IL", "china": "CN",
     "slovenia": "SI", "lithuania": "LT", "latvia": "LV", "estonia": "EE", "luxembourg": "LU",
     "russian federation": "RU", "russia": "RU", "slovak republic": "SK", "czech republic": "CZ",
+    "usa": "US", "uk": "GB", "united states of america": "US", "philipines": "PH",
+    "bosnia-herzegovina": "BA", "bosnia herzegovina": "BA", "south africa": "ZA",
 }
 
 def _name_to_iso(name: str):
@@ -617,6 +692,59 @@ def scrape_doodstream_tiers():
 
 TIER_SCRAPERS = {"voe": scrape_voe_tiers, "firestream": scrape_firestream_tiers,
                  "doodstream": scrape_doodstream_tiers}
+
+
+# --- New hosters: earn-page tier scrapers -------------------------------------
+_ISO_KEYS_SORTED = sorted(NAME_TO_ISO.keys(), key=len, reverse=True)
+
+def _codes_in_text(text: str) -> List[str]:
+    low = text.lower()
+    found = []
+    for name in _ISO_KEYS_SORTED:
+        if re.search(r"\b" + re.escape(name) + r"\b", low):
+            code = NAME_TO_ISO[name]
+            if code not in found:
+                found.append(code)
+    return found
+
+def _scrape_tier_blocks(url: str):
+    """Generic parser for earn pages that list 'Tier N' blocks, each with a $rate and
+    a set of country names. Returns (tiers, default_rate)."""
+    html = requests.get(url, timeout=15, headers=_SCRAPE_HEADERS).text
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+    chunks = re.split(r"(?i)\btier\s*\d+\b", text)
+    tiers = []
+    for chunk in chunks[1:]:
+        seg = re.split(r"(?i)all\s*others|\bothers\b|rules|minimum payout|conditions|referral", chunk)[0]
+        mamt = re.search(r"\$\s*([\d.]+)", seg)
+        if not mamt:
+            continue
+        rate = float(mamt.group(1))
+        codes = _codes_in_text(seg)
+        if codes and rate:
+            tiers.append({"rate": rate, "countries": codes})
+    tiers = [{"name": f"Tier {i+1}", "rate": t["rate"], "countries": t["countries"]}
+             for i, t in enumerate(tiers)]
+    md = re.search(r"(?i)(?:all\s*others|every other country[^$]{0,80}?)\$\s*([\d.]+)", text)
+    default_rate = float(md.group(1)) if md else None
+    return tiers, default_rate
+
+def scrape_vidara_tiers():
+    return _scrape_tier_blocks("https://vidara.so/earn")
+
+def scrape_vinovo_tiers():
+    return _scrape_tier_blocks("https://vinovo.si/affiliate")
+
+def scrape_vidnest_tiers():
+    return _scrape_tier_blocks("https://vidnest.io/earn")
+
+# Note: Playmate's earn table is rendered client-side and not present in the raw HTML,
+# so it can't be scraped server-side; its tiers stay as seeded (admin-editable).
+TIER_SCRAPERS.update({
+    "vidara": scrape_vidara_tiers,
+    "vinovo": scrape_vinovo_tiers,
+    "vidnest": scrape_vidnest_tiers,
+})
 
 async def refresh_host_tiers(host: dict) -> dict:
     prov = host.get("api_provider")
@@ -730,6 +858,50 @@ def find_replacement(provider: str, key: str, title: str, host: Optional[dict] =
         if provider == "firestream":
             h = host or {}
             return _firestream_search(h.get("login_email"), h.get("login_password"), key, target)
+        if provider in ("playmate", "vidara", "vinovo", "vidnest"):
+            q = requests.utils.quote(_dood_search_term(title))
+            if provider == "playmate":
+                d = _api_json(f"https://api.playmate.to/file/search?key={key}&q={q}&per_page=100")
+                data = d.get("result") or []
+                embed = "https://playmate.to/e/"
+            elif provider == "vidara":
+                d = _api_json(f"https://api.vidara.so/v1/video/list?api_key={key}&title={q}&limit=200")
+                res = d.get("result") or {}
+                data = res.get("files") if isinstance(res, dict) else res
+                embed = "https://vidara.so/e/"
+            elif provider == "vinovo":
+                d = _api_json(f"https://api.vinovo.si/api/file/list?key={key}&search_term={q}&per_page=200")
+                data = (d.get("result") or {}).get("files") or []
+                embed = "https://vinovo.si/e/"
+            else:  # vidnest
+                d = _api_json(f"https://vidnest.io/api/file/list?key={key}&title={q}&per_page=200")
+                data = (d.get("result") or {}).get("files") or []
+                embed = "https://vidnest.io/e/"
+            data = data or []
+            matches = [r for r in data if _norm_title(r.get("title") or r.get("name") or r.get("file_title", "")) == target]
+            matches.sort(key=lambda r: r.get("uploaded", ""), reverse=True)
+            for r in matches:
+                c = r.get("filecode") or r.get("file_code")
+                if not c:
+                    continue
+                info = api_resolve_link(provider, f"{embed}{c}", key)
+                if info and info.get("status") == "online":
+                    return {"url": info.get("url") or f"{embed}{c}",
+                            "title": r.get("title") or r.get("name") or r.get("file_title"), "code": c}
+            return None
+        if provider == "streamtape":
+            h = host or {}
+            login = h.get("login_email")
+            if not login:
+                return None
+            d = _api_json(f"https://api.streamtape.com/file/listfolder?login={login}&key={key}")
+            files = ((d.get("result") or {}).get("files")) or []
+            matches = [r for r in files if _norm_title(r.get("name", "")) == target and r.get("convert") == "converted"]
+            matches.sort(key=lambda r: r.get("created_at", 0), reverse=True)
+            if matches:
+                c = matches[0].get("linkid")
+                return {"url": f"https://streamtape.com/e/{c}", "title": matches[0].get("name"), "code": c}
+            return None
     except Exception as e:
         logger.warning(f"find_replacement {provider} failed: {e}")
     return None
@@ -745,10 +917,10 @@ async def resolve_mirror_links(mirror_id: str):
         host_ids = [l["host_id"] for l in links]
         providers = {}
         async for h in db.hosts.find({"id": {"$in": host_ids}}):
-            providers[h["id"]] = (h.get("api_provider"), resolve_api_key(h.get("api_provider"), h.get("api_key")))
+            providers[h["id"]] = (h.get("api_provider"), resolve_api_key(h.get("api_provider"), h.get("api_key")), h.get("login_email"))
         for l in links:
-            prov, key = providers.get(l["host_id"], (None, None))
-            api = await asyncio.to_thread(api_resolve_link, prov, l["embed_url"], key) if prov else None
+            prov, key, login = providers.get(l["host_id"], (None, None, None))
+            api = await asyncio.to_thread(api_resolve_link, prov, l["embed_url"], key, login) if prov else None
             if api:
                 l["status"] = api["status"]
                 l["resolved_url"] = api["url"]
@@ -891,14 +1063,17 @@ async def update_host(host_id: str, inp: HostInput, admin: dict = Depends(get_ad
 async def test_host_key(inp: TestKeyInput, admin: dict = Depends(get_admin_user)):
     provider = inp.api_provider
     key = inp.api_key
-    if not key and inp.host_id:
+    login = inp.login_email
+    if inp.host_id:
         h = await db.hosts.find_one({"id": inp.host_id})
         if h:
             provider = provider or h.get("api_provider")
-            key = resolve_api_key(h.get("api_provider"), h.get("api_key"))
+            login = login or h.get("login_email")
+            if not key:
+                key = resolve_api_key(h.get("api_provider"), h.get("api_key"))
     if not key:
         key = resolve_api_key(provider, None)
-    return await asyncio.to_thread(validate_api_key, provider, key)
+    return await asyncio.to_thread(validate_api_key, provider, key, login)
 
 @api_router.post("/admin/hosts/refresh-tiers")
 async def refresh_tiers(inp: RefreshTiersInput, admin: dict = Depends(get_admin_user)):
@@ -1223,6 +1398,39 @@ async def admin_stats(admin: dict = Depends(get_admin_user)):
     return {"total_users": total_users, "total_mirrors": total_mirrors,
             "total_hosts": total_hosts, "total_views": total_views, "offline_links": offline_links}
 
+@api_router.get("/admin/login-alerts")
+async def login_alerts(admin: dict = Depends(get_admin_user)):
+    """Suspicious IPs: many failed logins or sign-up attempts from a single IP."""
+    docs = await db.login_attempts.find({}).to_list(2000)
+    now = datetime.now(timezone.utc)
+    alerts = []
+    for d in docs:
+        ident = d.get("identifier", "")
+        count = int(d.get("count", 0) or 0)
+        if ident.startswith("ip:"):
+            kind, ip = "login", ident[3:]
+        elif ident.startswith("register:"):
+            kind, ip = "register", ident[len("register:"):]
+        else:
+            continue  # skip per-account rows to avoid noise
+        if count < 3:
+            continue
+        locked = d.get("locked_until")
+        is_locked = bool(locked and datetime.fromisoformat(locked) > now)
+        alerts.append({"ip": ip, "kind": kind, "count": count,
+                       "locked": is_locked, "locked_until": locked})
+    alerts.sort(key=lambda a: -a["count"])
+    return alerts
+
+@api_router.delete("/admin/login-alerts/{ip}")
+async def clear_login_alerts(ip: str, admin: dict = Depends(get_admin_user)):
+    """Unblock / clear all failed-attempt counters for one IP."""
+    await db.login_attempts.delete_many(
+        {"$or": [{"identifier": f"ip:{ip}"}, {"identifier": f"register:{ip}"},
+                 {"identifier": {"$regex": f"^{re.escape(ip)}:"}}]})
+    return {"ok": True}
+
+
 class SettingsInput(BaseModel):
     site_name: str
     tagline: str = ""
@@ -1238,6 +1446,7 @@ class SettingsInput(BaseModel):
     turnstile_login: bool = True
     turnstile_register: bool = True
     turnstile_gate: bool = True
+    antiadblock_enabled: bool = False
 
 @api_router.get("/settings")
 async def get_settings():
@@ -1416,6 +1625,7 @@ DEFAULT_SETTINGS = {
     "turnstile_login": True,
     "turnstile_register": True,
     "turnstile_gate": True,
+    "antiadblock_enabled": False,
 }
 
 DEFAULT_HOSTS = [
@@ -1447,6 +1657,56 @@ FIRESTREAM_TIERS = [
     {"name": "Tier 2", "rate": 25.0, "countries": ["AT", "CA", "FI", "FR", "NO", "KR"]},
     {"name": "Tier 3", "rate": 15.0, "countries": ["BE", "HR", "IE", "IT", "NL", "NZ", "PL", "ES", "SE", "JP"]},
     {"name": "Tier 4", "rate": 10.0, "countries": ["AR", "BA", "BR", "BG", "CL", "CO", "CY", "EG", "GR", "HK", "HU", "ID", "MY", "MX", "PK", "PE", "RO", "RS", "TH", "AE", "VN"]},
+]
+
+# New hosters (seeded from their public earn pages; auto-refreshed daily via TIER_SCRAPERS).
+NEW_HOSTS = [
+    {
+        "name": "Playmate", "domain": "playmate.to", "default_rate": 10.0, "is_active": True,
+        "api_provider": "playmate",
+        "tiers": [
+            {"name": "Tier 1", "rate": 50.0, "countries": ["AU", "DE", "US", "GB"]},
+            {"name": "Tier 2", "rate": 35.0, "countries": ["AT", "CA", "FI", "FR", "NO"]},
+            {"name": "Tier 3", "rate": 30.0, "countries": ["BE", "HR", "IE", "IT", "NL", "NZ", "PL", "ES", "SE"]},
+            {"name": "Tier 4", "rate": 15.0, "countries": ["AR", "BA", "BR", "BG", "CL", "CO", "CY", "EG", "GR", "HK", "HU", "IN", "ID", "JP", "MY", "MX", "PK", "PE", "RO", "RS", "TH", "AE", "VN"]},
+        ],
+    },
+    {
+        "name": "Vidara", "domain": "vidara.so", "default_rate": 6.0, "is_active": True,
+        "api_provider": "vidara",
+        "tiers": [
+            {"name": "Tier 1", "rate": 40.0, "countries": ["AU", "DE", "US", "GB"]},
+            {"name": "Tier 2", "rate": 25.0, "countries": ["AT", "CA", "FI", "FR", "NO"]},
+            {"name": "Tier 3", "rate": 20.0, "countries": ["BE", "HR", "IE", "IT", "NL", "NZ", "PL", "ES", "SE"]},
+            {"name": "Tier 4", "rate": 9.0, "countries": ["AR", "BA", "BR", "BG", "CL", "CO", "CY", "EG", "GR", "HK", "HU", "ID", "JP", "MY", "MX", "PK", "PE", "RO", "RS", "TH", "AE", "VN"]},
+        ],
+    },
+    {
+        "name": "Streamtape", "domain": "streamtape.com", "default_rate": 10.0, "is_active": True,
+        "api_provider": "streamtape",
+        "tiers": [],
+    },
+    {
+        "name": "Vinovo", "domain": "vinovo.si", "default_rate": 4.5, "is_active": True,
+        "api_provider": "vinovo",
+        "tiers": [
+            {"name": "Tier 1", "rate": 40.0, "countries": ["GB", "US", "AU", "NO", "DE"]},
+            {"name": "Tier 2", "rate": 22.0, "countries": ["DK", "SE", "FI", "FR", "AT", "CA"]},
+            {"name": "Tier 3", "rate": 12.0, "countries": ["NL", "CH", "IT", "BE", "IE", "NZ", "ES"]},
+            {"name": "Tier 4", "rate": 7.0, "countries": ["BA", "BR", "BG", "CZ", "CY", "GR", "HK", "IN", "ID", "MX", "PL", "RO", "RU", "RS", "SK", "AE", "JP"]},
+        ],
+    },
+    {
+        "name": "VidNest", "domain": "vidnest.io", "default_rate": 5.0, "is_active": True,
+        "api_provider": "vidnest",
+        "tiers": [
+            {"name": "Tier 1", "rate": 35.0, "countries": ["AU", "CA", "GB", "US"]},
+            {"name": "Tier 2", "rate": 25.0, "countries": ["DK", "FI", "SE", "NO", "DE", "FR"]},
+            {"name": "Tier 3", "rate": 15.0, "countries": ["JP", "BE", "ES", "IT", "PL", "CH", "AT", "NL", "ZA"]},
+            {"name": "Tier 4", "rate": 10.0, "countries": ["RU", "SG", "ID", "SK", "PT", "RO", "HU", "UA"]},
+            {"name": "Tier 5", "rate": 5.5, "countries": ["PH", "TR", "IN", "VN", "EG", "BR", "MX"]},
+        ],
+    },
 ]
 
 async def seed():
@@ -1522,6 +1782,16 @@ async def seed():
             "created_at": now_iso(),
         })
         logger.info("Seeded FireStream host")
+
+    # Seed the newer hosters (one each) if they don't exist yet. Tiers are pre-filled from
+    # their earn pages and auto-refreshed daily; admins add the API key to activate them.
+    for nh in NEW_HOSTS:
+        if await db.hosts.count_documents({"api_provider": nh["api_provider"]}) == 0:
+            doc = dict(nh)
+            doc["id"] = str(uuid.uuid4())
+            doc["created_at"] = now_iso()
+            await db.hosts.insert_one(doc)
+            logger.info(f"Seeded {nh['name']} host")
 
     cred = ROOT_DIR.parent / "memory" / "test_credentials.md"
     try:

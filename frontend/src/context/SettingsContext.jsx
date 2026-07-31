@@ -17,6 +17,7 @@ const FALLBACK = {
   turnstile_login: true,
   turnstile_register: true,
   turnstile_gate: true,
+  antiadblock_enabled: false,
   has_turnstile_secret: false,
 };
 

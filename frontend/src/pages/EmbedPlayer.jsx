@@ -6,6 +6,7 @@ import { useI18n } from "../context/I18nContext";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { LanguageToggle } from "../components/LanguageToggle";
 import { AdSlot } from "../components/AdSlot";
+import { AdblockGate } from "../components/AdblockGate";
 import { VideoPlayer } from "../components/VideoPlayer";
 import { Film, Globe2, TrendingUp } from "lucide-react";
 
@@ -36,6 +37,7 @@ export default function EmbedPlayer() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <AdblockGate enabled={!!settings.antiadblock_enabled} />
       <div className="w-full max-w-4xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div className="flex items-center gap-3 min-w-0">

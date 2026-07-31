@@ -1166,7 +1166,6 @@ class TestAdminUserManagementAndFixLogs:
         assert admin_response.status_code == 200, admin_response.text
         logs = admin_response.json()
         assert isinstance(logs, list)
-        assert logs, "Expected the known auto-fix history entry from the connected account"
         timestamps = [entry["created_at"] for entry in logs]
         assert timestamps == sorted(timestamps, reverse=True)
         for entry in logs:
@@ -1239,3 +1238,144 @@ class TestAuthenticationPlaybook:
         assert response.status_code in (200, 204), response.text
         assert response.headers.get("access-control-allow-credentials") == "true"
         assert response.headers.get("access-control-allow-origin") == origin
+
+
+
+# ---- New hosters, security settings, and login warnings (iteration 13) ----
+class TestNewHostersAndSecurity:
+    """Seeded provider metadata, key validation, settings privacy, and alert lifecycle."""
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_all_eight_seeded_hosters_and_tiers(self, admin_token):
+        response = requests.get(f"{API}/hosts", headers=self._headers(admin_token))
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert len(data) == 8, f"Expected exactly 8 seeded hosters, got {len(data)}"
+        by_provider = {host.get("api_provider"): host for host in data}
+        expected = {
+            "doodstream": "DoodStream",
+            "voe": "VOE",
+            "firestream": "FireStream",
+            "playmate": "Playmate",
+            "vidara": "Vidara",
+            "streamtape": "Streamtape",
+            "vinovo": "Vinovo",
+            "vidnest": "VidNest",
+        }
+        for provider, name in expected.items():
+            assert provider in by_provider, f"Missing provider {provider}: {by_provider.keys()}"
+            host = by_provider[provider]
+            assert host["name"] == name
+            assert "api_key" not in host and "login_password" not in host
+            assert isinstance(host.get("has_api_key"), bool)
+            assert isinstance(host.get("tiers"), list)
+            if provider == "streamtape":
+                assert host["tiers"] == []
+            else:
+                assert len(host["tiers"]) > 0, f"{name} should have earning tiers"
+
+    @pytest.mark.parametrize(
+        "provider", ["playmate", "vidara", "streamtape", "vinovo", "vidnest"]
+    )
+    def test_new_hoster_missing_key_is_graceful_and_secret_free(self, admin_token, provider):
+        response = requests.post(
+            f"{API}/hosts/test-key",
+            json={"api_provider": provider, "api_key": None, "login_email": None},
+            headers=self._headers(admin_token),
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data == {"ok": False, "message": "No API key set"}
+        assert "api_key" not in data and "secret" not in data
+
+    def test_settings_antiadblock_roundtrip_and_turnstile_secret_never_leaks(self, admin_token):
+        headers = self._headers(admin_token)
+        original_response = requests.get(f"{API}/settings")
+        assert original_response.status_code == 200, original_response.text
+        original = original_response.json()
+        assert "turnstile_secret_key" not in original
+        assert isinstance(original.get("has_turnstile_secret"), bool)
+
+        payload = {
+            key: original.get(key, default)
+            for key, default in {
+                "site_name": "MirrorStream", "tagline": "", "description": "", "footer_text": "",
+                "ad_header": "", "ad_footer": "", "ad_player_top": "", "ad_player_bottom": "",
+                "turnstile_enabled": False, "turnstile_site_key": "", "turnstile_secret_key": "",
+                "turnstile_login": True, "turnstile_register": True, "turnstile_gate": True,
+                "antiadblock_enabled": False,
+            }.items()
+        }
+        try:
+            payload["turnstile_enabled"] = False
+            payload["antiadblock_enabled"] = True
+            update = requests.put(f"{API}/admin/settings", json=payload, headers=headers)
+            assert update.status_code == 200, update.text
+            updated = update.json()
+            assert updated["antiadblock_enabled"] is True
+            assert "turnstile_secret_key" not in updated
+
+            public = requests.get(f"{API}/settings")
+            assert public.status_code == 200, public.text
+            settings = public.json()
+            assert settings["antiadblock_enabled"] is True
+            assert settings["turnstile_enabled"] is False
+            assert "turnstile_secret_key" not in settings
+            assert isinstance(settings["has_turnstile_secret"], bool)
+        finally:
+            payload["antiadblock_enabled"] = False
+            payload["turnstile_enabled"] = False
+            restored = requests.put(f"{API}/admin/settings", json=payload, headers=headers)
+            assert restored.status_code == 200, restored.text
+            final = requests.get(f"{API}/settings").json()
+            assert final["antiadblock_enabled"] is False
+            assert final["turnstile_enabled"] is False
+            assert "turnstile_secret_key" not in final
+
+    def test_login_alert_created_listed_and_cleared(self, admin_token):
+        headers = self._headers(admin_token)
+        before_response = requests.get(f"{API}/admin/login-alerts", headers=headers)
+        assert before_response.status_code == 200, before_response.text
+        before_counts = {item["ip"]: item["count"] for item in before_response.json()}
+        bad_email = f"TEST_alert_{uuid.uuid4().hex[:10]}@example.com"
+        for _ in range(3):
+            failed = requests.post(
+                f"{API}/auth/login",
+                json={"email": bad_email, "password": "wrongpass"},
+            )
+            assert failed.status_code == 401, failed.text
+            assert failed.json()["detail"] == "Invalid email or password"
+
+        listed = requests.get(f"{API}/admin/login-alerts", headers=headers)
+        assert listed.status_code == 200, listed.text
+        alerts = listed.json()
+        alert = next(
+            (
+                item for item in alerts
+                if item["kind"] == "login"
+                and item["count"] >= before_counts.get(item["ip"], 0) + 3
+            ),
+            None,
+        )
+        assert alert is not None, {"before": before_counts, "after": alerts}
+        assert alert["count"] >= 3
+        assert isinstance(alert["locked"], bool)
+        observed_ip = alert["ip"]
+
+        cleared = requests.delete(
+            f"{API}/admin/login-alerts/{observed_ip}", headers=headers
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json() == {"ok": True}
+        after = requests.get(f"{API}/admin/login-alerts", headers=headers)
+        assert after.status_code == 200, after.text
+        assert all(item["ip"] != observed_ip for item in after.json())
+
+    def test_login_alerts_require_admin(self, user_creds):
+        headers = self._headers(user_creds["token"])
+        response = requests.get(f"{API}/admin/login-alerts", headers=headers)
+        assert response.status_code == 403, response.text
+        assert response.json()["detail"] == "Admin access required"

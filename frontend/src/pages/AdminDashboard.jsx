@@ -26,6 +26,7 @@ function HostEditor({ host, onClose, onSaved }) {
       const { data } = await api.post("/hosts/test-key", {
         api_provider: form.api_provider || null,
         api_key: form.api_key ? form.api_key : null,
+        login_email: form.login_email ? form.login_email : null,
         host_id: host?.id || null,
       });
       if (data.ok) {
@@ -109,6 +110,11 @@ function HostEditor({ host, onClose, onSaved }) {
               <option value="doodstream">Doodstream API</option>
               <option value="voe">VOE API</option>
               <option value="firestream">FireStream API</option>
+              <option value="playmate">Playmate API</option>
+              <option value="vidara">Vidara API</option>
+              <option value="streamtape">Streamtape API</option>
+              <option value="vinovo">Vinovo API</option>
+              <option value="vidnest">VidNest API</option>
             </select>
           </div>
 
@@ -127,6 +133,21 @@ function HostEditor({ host, onClose, onSaved }) {
                 </button>
               </div>
               {host?.has_api_key && <p className="text-xs text-muted-foreground mt-1">{tr("admin.host.apiKeySet")}</p>}
+            </div>
+          )}
+
+          {form.api_provider === "streamtape" && (
+            <div className="space-y-3 border border-border rounded-md p-3 bg-surface/50">
+              <p className="text-xs text-muted-foreground">
+                Streamtape braucht zusätzlich zum API-Key ein <strong>API-Login</strong> (beides im Streamtape-Panel unter „Account Settings"). API-Key kommt ins Feld oben.
+              </p>
+              <div>
+                <label className="text-sm text-muted-foreground">API-Login</label>
+                <input data-testid="host-streamtape-login-input" autoComplete="off"
+                  value={form.login_email} onChange={(e) => setForm({ ...form, login_email: e.target.value })}
+                  placeholder="z.B. y7bhafa3bxfxudzk"
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+              </div>
             </div>
           )}
 
@@ -271,6 +292,22 @@ export default function AdminDashboard() {
   const [refreshingTiers, setRefreshingTiers] = useState(false);
   const [userModal, setUserModal] = useState(null); // {mode:'create'} | {mode:'password', user}
   const [userSearch, setUserSearch] = useState("");
+  const [loginAlerts, setLoginAlerts] = useState([]);
+
+  const loadAlerts = useCallback(async () => {
+    try {
+      const { data } = await api.get("/admin/login-alerts");
+      setLoginAlerts(data);
+    } catch (e) { /* noop */ }
+  }, []);
+
+  const clearAlert = async (ip) => {
+    try {
+      await api.delete(`/admin/login-alerts/${encodeURIComponent(ip)}`);
+      toast.success(lang === "de" ? "IP entsperrt" : "IP cleared");
+      loadAlerts();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -280,6 +317,7 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (tab === "security") loadAlerts(); }, [tab, loadAlerts]);
   useEffect(() => { setSiteForm({
     site_name: settings.site_name || "", tagline: settings.tagline || "",
     description: settings.description || "", footer_text: settings.footer_text || "",
@@ -291,6 +329,7 @@ export default function AdminDashboard() {
     turnstile_login: settings.turnstile_login !== false,
     turnstile_register: settings.turnstile_register !== false,
     turnstile_gate: settings.turnstile_gate !== false,
+    antiadblock_enabled: !!settings.antiadblock_enabled,
   }); }, [settings]);
 
   const saveSite = async () => {
@@ -613,10 +652,70 @@ export default function AdminDashboard() {
               ))}
             </div>
 
+            <div className="pt-2 border-t border-border" data-testid="antiadblock-section">
+              <h3 className="font-display font-bold text-lg mt-4">{lang === "de" ? "Anti-Adblock" : "Anti-Adblock"}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {lang === "de"
+                  ? "Blockiert den Player, bis der Besucher seinen Adblocker deaktiviert."
+                  : "Blocks the player until the viewer disables their adblocker."}
+              </p>
+              <label className="flex items-center gap-3 cursor-pointer mt-3" data-testid="antiadblock-toggle">
+                <input type="checkbox" checked={!!siteForm.antiadblock_enabled}
+                  onChange={(e) => setSiteForm({ ...siteForm, antiadblock_enabled: e.target.checked })}
+                  className="w-4 h-4 accent-brand" />
+                <span className="text-sm">{lang === "de" ? "Anti-Adblock aktivieren (Player sperren)" : "Enable anti-adblock (block player)"}</span>
+              </label>
+            </div>
+
             <button onClick={saveSite} disabled={savingSite} data-testid="save-security-button"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
               <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
             </button>
+
+            <div className="pt-6 mt-2 border-t border-border" data-testid="login-alerts-section">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display font-bold text-lg">{lang === "de" ? "Login-Warnungen" : "Login alerts"}</h3>
+                <button onClick={loadAlerts} data-testid="refresh-alerts-button"
+                  className="text-sm text-muted-foreground hover:text-brand transition-colors inline-flex items-center gap-1">
+                  <RefreshCw size={14} /> {lang === "de" ? "Aktualisieren" : "Refresh"}
+                </button>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {lang === "de"
+                  ? "IPs mit auffällig vielen fehlgeschlagenen Logins oder Registrierungen. Ab 5 Fehlversuchen wird die IP automatisch 15 Min. gesperrt."
+                  : "IPs with an unusual number of failed logins or sign-ups. From 5 failures the IP is auto-locked for 15 min."}
+              </p>
+              {loginAlerts.length === 0 ? (
+                <p className="mt-4 text-sm text-muted-foreground" data-testid="no-login-alerts">
+                  {lang === "de" ? "Keine verdächtigen IPs. Alles ruhig. ✓" : "No suspicious IPs. All clear. ✓"}
+                </p>
+              ) : (
+                <div className="mt-4 space-y-2">
+                  {loginAlerts.map((a) => (
+                    <div key={`${a.kind}-${a.ip}`} data-testid={`login-alert-${a.ip}`}
+                      className={`flex items-center justify-between rounded-md border px-4 py-2.5 ${a.locked ? "border-offline/40 bg-offline/10" : "border-border bg-surface"}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Ban size={16} className={a.locked ? "text-offline" : "text-muted-foreground"} />
+                        <div className="min-w-0">
+                          <span className="font-mono text-sm">{a.ip}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {a.kind === "register" ? (lang === "de" ? "Registrierung" : "sign-up") : "Login"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-sm font-semibold text-offline">{a.count} {lang === "de" ? "Fehlversuche" : "fails"}</span>
+                        {a.locked && <span className="text-xs px-2 py-0.5 rounded-full bg-offline/20 text-offline">{lang === "de" ? "gesperrt" : "locked"}</span>}
+                        <button onClick={() => clearAlert(a.ip)} data-testid={`clear-alert-${a.ip}`}
+                          className="text-xs px-3 py-1 rounded-md border border-border hover:border-brand hover:text-brand transition-colors">
+                          {lang === "de" ? "Entsperren" : "Clear"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
