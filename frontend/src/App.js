@@ -9,6 +9,7 @@ import LandingPage from "./pages/LandingPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
+import OfflineStreams from "./pages/OfflineStreams";
 import MirrorForm from "./pages/MirrorForm";
 import MirrorStats from "./pages/MirrorStats";
 import AdminDashboard from "./pages/AdminDashboard";
@@ -38,6 +39,7 @@ function App() {
                   <Route path="/e/:slug" element={<EmbedPlayer />} />
                   <Route path="/embed/:slug" element={<EmbedPlayer />} />
                   <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+                  <Route path="/dashboard/offline" element={<Protected><OfflineStreams /></Protected>} />
                   <Route path="/dashboard/new" element={<Protected><MirrorForm /></Protected>} />
                   <Route path="/dashboard/edit/:id" element={<Protected><MirrorForm /></Protected>} />
                   <Route path="/dashboard/stats/:id" element={<Protected><MirrorStats /></Protected>} />
