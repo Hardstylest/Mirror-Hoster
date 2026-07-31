@@ -28,15 +28,15 @@ export const AuthProvider = ({ children }) => {
     loadUser();
   }, []);
 
-  const login = async (email, password) => {
-    const { data } = await api.post("/auth/login", { email, password });
+  const login = async (email, password, turnstileToken) => {
+    const { data } = await api.post("/auth/login", { email, password, turnstile_token: turnstileToken || null });
     localStorage.setItem("token", data.access_token);
     setUser(data.user);
     return data.user;
   };
 
-  const register = async (name, email, password) => {
-    const { data } = await api.post("/auth/register", { name, email, password });
+  const register = async (name, email, password, turnstileToken) => {
+    const { data } = await api.post("/auth/register", { name, email, password, turnstile_token: turnstileToken || null });
     localStorage.setItem("token", data.access_token);
     setUser(data.user);
     return data.user;

@@ -12,6 +12,12 @@ const FALLBACK = {
   ad_footer: "",
   ad_player_top: "",
   ad_player_bottom: "",
+  turnstile_enabled: false,
+  turnstile_site_key: "",
+  turnstile_login: true,
+  turnstile_register: true,
+  turnstile_gate: true,
+  has_turnstile_secret: false,
 };
 
 export const SettingsProvider = ({ children }) => {

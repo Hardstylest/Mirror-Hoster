@@ -258,7 +258,7 @@ function UserModal({ mode, user, onClose, onSaved }) {
 }
 
 export default function AdminDashboard() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState("overview");
   const [stats, setStats] = useState(null);
@@ -285,6 +285,12 @@ export default function AdminDashboard() {
     description: settings.description || "", footer_text: settings.footer_text || "",
     ad_header: settings.ad_header || "", ad_footer: settings.ad_footer || "",
     ad_player_top: settings.ad_player_top || "", ad_player_bottom: settings.ad_player_bottom || "",
+    turnstile_enabled: !!settings.turnstile_enabled,
+    turnstile_site_key: settings.turnstile_site_key || "",
+    turnstile_secret_key: "",
+    turnstile_login: settings.turnstile_login !== false,
+    turnstile_register: settings.turnstile_register !== false,
+    turnstile_gate: settings.turnstile_gate !== false,
   }); }, [settings]);
 
   const saveSite = async () => {
@@ -351,6 +357,7 @@ export default function AdminDashboard() {
     { id: "users", label: t("admin.tab.users") },
     { id: "settings", label: t("admin.tab.settings") },
     { id: "ads", label: t("admin.tab.ads") },
+    { id: "security", label: lang === "de" ? "Sicherheit" : "Security" },
   ];
 
   return (
@@ -546,6 +553,67 @@ export default function AdminDashboard() {
               </div>
             ))}
             <button onClick={saveSite} disabled={savingSite} data-testid="save-ads-button"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+              <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
+            </button>
+          </div>
+        )}
+
+        {tab === "security" && siteForm && (
+          <div className="max-w-2xl bg-card border border-border rounded-lg p-6 space-y-5" data-testid="security-panel">
+            <div>
+              <h3 className="font-display font-bold text-lg">{lang === "de" ? "Bot-Schutz (Cloudflare Turnstile)" : "Bot protection (Cloudflare Turnstile)"}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {lang === "de"
+                  ? "Kostenloser Bot-Check von Cloudflare. Schlüssel erstellst du im Cloudflare-Dashboard → Turnstile → Widget hinzufügen (Domain deiner Seite eintragen). Leer lassen = deaktiviert."
+                  : "Free bot check by Cloudflare. Create keys in the Cloudflare dashboard → Turnstile → Add widget (enter your site domain). Leave empty to disable."}
+              </p>
+              <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noreferrer"
+                className="mt-1 inline-block text-sm text-brand hover:underline" data-testid="turnstile-help-link">
+                {lang === "de" ? "Zum Cloudflare Turnstile Dashboard →" : "Open Cloudflare Turnstile dashboard →"}
+              </a>
+            </div>
+
+            <label className="flex items-center gap-3 cursor-pointer" data-testid="turnstile-enabled-toggle">
+              <input type="checkbox" checked={siteForm.turnstile_enabled}
+                onChange={(e) => setSiteForm({ ...siteForm, turnstile_enabled: e.target.checked })}
+                className="w-4 h-4 accent-brand" />
+              <span className="text-sm">{lang === "de" ? "Turnstile aktivieren" : "Enable Turnstile"}</span>
+            </label>
+
+            <div>
+              <label className="text-sm text-muted-foreground">Site Key</label>
+              <input data-testid="turnstile-site-key" value={siteForm.turnstile_site_key}
+                onChange={(e) => setSiteForm({ ...siteForm, turnstile_site_key: e.target.value })}
+                placeholder="0x4AAAAAAA..." spellCheck={false}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground">Secret Key</label>
+              <input data-testid="turnstile-secret-key" type="password" value={siteForm.turnstile_secret_key}
+                onChange={(e) => setSiteForm({ ...siteForm, turnstile_secret_key: e.target.value })}
+                placeholder={settings.has_turnstile_secret ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : "0x4AAAAAAA..."}
+                spellCheck={false}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+
+            <div className="pt-2">
+              <p className="text-sm text-muted-foreground mb-2">{lang === "de" ? "Wo soll geprüft werden?" : "Where should it apply?"}</p>
+              {[
+                { key: "turnstile_login", label: lang === "de" ? "Login" : "Login" },
+                { key: "turnstile_register", label: lang === "de" ? "Registrierung" : "Registration" },
+                { key: "turnstile_gate", label: lang === "de" ? "Seiten-Check (einmal / 24h)" : "Site gate (once / 24h)" },
+              ].map((f) => (
+                <label key={f.key} className="flex items-center gap-3 cursor-pointer py-1" data-testid={`toggle-${f.key}`}>
+                  <input type="checkbox" checked={!!siteForm[f.key]}
+                    onChange={(e) => setSiteForm({ ...siteForm, [f.key]: e.target.checked })}
+                    className="w-4 h-4 accent-brand" />
+                  <span className="text-sm">{f.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <button onClick={saveSite} disabled={savingSite} data-testid="save-security-button"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
               <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
             </button>

@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { formatApiError } from "../lib/api";
 import { useI18n } from "../context/I18nContext";
+import { useSettings } from "../context/SettingsContext";
+import { TurnstileWidget } from "../components/TurnstileWidget";
 import { LanguageToggle } from "../components/LanguageToggle";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { Film } from "lucide-react";
@@ -10,20 +12,26 @@ import { Film } from "lucide-react";
 export default function Login() {
   const { login } = useAuth();
   const { t } = useI18n();
+  const { settings } = useSettings();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [token, setToken] = useState("");
+  const [nonce, setNonce] = useState(0);
+
+  const captchaOn = settings.turnstile_enabled && settings.turnstile_login && !!settings.turnstile_site_key;
 
   const submit = async (e) => {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
-      const u = await login(email, password);
+      const u = await login(email, password, token);
       navigate(u.role === "admin" ? "/admin" : "/dashboard");
     } catch (err) {
       setError(formatApiError(err.response?.data?.detail) || err.message);
+      setToken(""); setNonce((n) => n + 1); // single-use token -> refresh widget
     }
     setLoading(false);
   };
@@ -59,7 +67,12 @@ export default function Login() {
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
           </div>
-          <button data-testid="login-submit-button" disabled={loading} type="submit"
+          {captchaOn && (
+            <div className="mt-5 flex justify-center min-h-[70px]" data-testid="login-captcha">
+              <TurnstileWidget key={nonce} siteKey={settings.turnstile_site_key} onToken={setToken} onExpire={() => setToken("")} />
+            </div>
+          )}
+          <button data-testid="login-submit-button" disabled={loading || (captchaOn && !token)} type="submit"
             className="mt-6 w-full py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
             {loading ? t("auth.signingIn") : t("nav.signin")}
           </button>

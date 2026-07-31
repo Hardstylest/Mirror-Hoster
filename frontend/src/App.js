@@ -15,6 +15,7 @@ import MirrorStats from "./pages/MirrorStats";
 import AdminDashboard from "./pages/AdminDashboard";
 import EmbedPlayer from "./pages/EmbedPlayer";
 import SetupWizard from "./pages/SetupWizard";
+import { SiteGate } from "./components/SiteGate";
 
 const Protected = ({ children, adminOnly }) => {
   const { user, ready } = useAuth();
@@ -33,6 +34,7 @@ function App() {
           <SettingsProvider>
             <BrowserRouter>
               <AuthProvider>
+                <SiteGate />
                 <Routes>
                   <Route path="/" element={<LandingPage />} />
                   <Route path="/setup" element={<SetupWizard />} />

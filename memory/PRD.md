@@ -56,6 +56,14 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Secrets**: `backend/.env` ist korrekt gitignored und NICHT in der Git-History → JWT_SECRET + Hoster-Zugangsdaten sind nicht im Repo. `.env.example` mit Härtungs-Hinweisen (JWT_SECRET via `openssl rand -hex 32`, SETUP_TOKEN empfohlen). docker-compose reicht COOKIE_SECURE/TRUSTED_PROXY_COUNT durch.
 - **Offene Entscheidung (User)**: Emergent-Plattform-Deploy verlangt getrackte `.env`; das widerspricht dem Security-Ziel (Secrets nicht committen). Für GitHub/Self-Host: `.env` gitignored lassen + Secrets rotieren. Nur wenn ausschließlich über Emergent deployt wird, .env tracken.
 
+## Bot-Schutz — Cloudflare Turnstile (2026-06)
+- **Optionaler Bot-Check** via Cloudflare Turnstile, komplett über Admin-Dashboard → Tab „Sicherheit" konfigurierbar (Site Key, Secret Key maskiert, Master-Schalter + Toggles für Login/Registrierung/Site-Gate). Leer/aus = keinerlei Auswirkung.
+- Keys liegen im `settings`-Doc (`turnstile_*`). Secret wird NIE ans Frontend zurückgegeben (`GET /api/settings` liefert nur `turnstile_site_key` + `has_turnstile_secret`). „Secret leer speichern = behalten".
+- Backend: `verify_turnstile()` prüft Token per Cloudflare `siteverify` (nur wenn aktiviert+konfiguriert). Enforced in `POST /auth/login`, `POST /auth/register` und neuem `POST /api/security/verify-gate`.
+- Frontend: `TurnstileWidget.jsx` (explicit render, Single-Use-Token → Remount bei Fehler), Widget in Login/Register, `SiteGate.jsx` als Vollbild-Overlay einmal / 24h (localStorage-Flag), Player-Routen `/e/`,`/embed/` ausgenommen. Admin-Tab „Sicherheit".
+- Verifiziert per curl mit Cloudflare-Test-Keys: Token-Pass→200, Token-fehlt→400, Fail-Secret→400, Secret nicht geleakt, blank=keep. Frontend: Gate+Widget rendern (Screenshot), Disabled-State sauber.
+- Standard: DEAKTIVIERT (leere Keys). User trägt eigene Cloudflare-Keys im Admin-Panel ein und aktiviert dann.
+
 ## Backlog / Next
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.

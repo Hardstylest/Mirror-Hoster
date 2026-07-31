@@ -103,10 +103,12 @@ class RegisterInput(BaseModel):
     name: str
     email: EmailStr
     password: str = Field(min_length=6)
+    turnstile_token: Optional[str] = None
 
 class LoginInput(BaseModel):
     email: EmailStr
     password: str
+    turnstile_token: Optional[str] = None
 
 class Tier(BaseModel):
     name: str
@@ -197,6 +199,46 @@ def _is_public_host(url: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Cloudflare Turnstile (bot protection) — fully optional, keys stored in settings
+# ---------------------------------------------------------------------------
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+async def _turnstile_cfg() -> dict:
+    s = await db.settings.find_one({"key": "site"}) or {}
+    return {
+        "enabled": bool(s.get("turnstile_enabled")),
+        "site_key": s.get("turnstile_site_key") or "",
+        "secret_key": s.get("turnstile_secret_key") or "",
+        "login": s.get("turnstile_login", True),
+        "register": s.get("turnstile_register", True),
+        "gate": s.get("turnstile_gate", True),
+    }
+
+def _turnstile_verify_sync(secret: str, token: str, ip: Optional[str]) -> bool:
+    try:
+        data = {"secret": secret, "response": token}
+        if ip:
+            data["remoteip"] = ip
+        r = requests.post(TURNSTILE_VERIFY_URL, data=data, timeout=10)
+        return bool(r.json().get("success"))
+    except Exception as e:
+        logger.warning(f"Turnstile verify error: {e}")
+        return False
+
+async def verify_turnstile(token: Optional[str], request: Request, surface: str) -> bool:
+    """Returns True (allow) when Turnstile is disabled/unconfigured for this surface,
+    otherwise validates the token with Cloudflare."""
+    cfg = await _turnstile_cfg()
+    if not cfg["enabled"] or not cfg["site_key"] or not cfg["secret_key"]:
+        return True
+    if not cfg.get(surface, True):
+        return True
+    if not token:
+        return False
+    return await asyncio.to_thread(_turnstile_verify_sync, cfg["secret_key"], token, get_client_ip(request))
 
 _geo_cache = {}
 
@@ -729,6 +771,8 @@ async def resolve_mirror_links(mirror_id: str):
 # ---------------------------------------------------------------------------
 @api_router.post("/auth/register")
 async def register(inp: RegisterInput, request: Request, response: Response):
+    if not await verify_turnstile(inp.turnstile_token, request, "register"):
+        raise HTTPException(status_code=400, detail="Bot verification failed. Please try again.")
     ip = get_client_ip(request)
     ip_ident = f"register:{ip}"
     ip_attempt = await db.login_attempts.find_one({"identifier": ip_ident})
@@ -754,6 +798,8 @@ async def register(inp: RegisterInput, request: Request, response: Response):
 
 @api_router.post("/auth/login")
 async def login(inp: LoginInput, request: Request, response: Response):
+    if not await verify_turnstile(inp.turnstile_token, request, "login"):
+        raise HTTPException(status_code=400, detail="Bot verification failed. Please try again.")
     email = inp.email.lower()
     ip = get_client_ip(request)
     ident = f"{ip}:{email}"
@@ -795,6 +841,15 @@ async def login(inp: LoginInput, request: Request, response: Response):
 async def logout(response: Response):
     response.delete_cookie("access_token", path="/")
     return {"message": "Logged out"}
+
+class GateInput(BaseModel):
+    token: Optional[str] = None
+
+@api_router.post("/security/verify-gate")
+async def verify_gate(inp: GateInput, request: Request):
+    if not await verify_turnstile(inp.token, request, "gate"):
+        raise HTTPException(status_code=400, detail="Bot verification failed. Please try again.")
+    return {"ok": True}
 
 @api_router.get("/auth/me")
 async def me(user: dict = Depends(get_current_user)):
@@ -1177,6 +1232,12 @@ class SettingsInput(BaseModel):
     ad_footer: str = ""
     ad_player_top: str = ""
     ad_player_bottom: str = ""
+    turnstile_enabled: bool = False
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""  # blank on save = keep existing secret
+    turnstile_login: bool = True
+    turnstile_register: bool = True
+    turnstile_gate: bool = True
 
 @api_router.get("/settings")
 async def get_settings():
@@ -1184,15 +1245,24 @@ async def get_settings():
     if not s:
         return DEFAULT_SETTINGS
     s.pop("_id", None)
-    return {**DEFAULT_SETTINGS, **s}
+    merged = {**DEFAULT_SETTINGS, **s}
+    # Never leak the Turnstile secret; expose only whether one is stored.
+    secret = merged.pop("turnstile_secret_key", None)
+    merged["has_turnstile_secret"] = bool(secret)
+    return merged
 
 @api_router.put("/admin/settings")
 async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_user)):
     data = inp.model_dump()
     data["key"] = "site"
+    # Blank secret means "keep the existing one" (raw secret is never sent to the UI).
+    if not data.get("turnstile_secret_key"):
+        data.pop("turnstile_secret_key", None)
     await db.settings.update_one({"key": "site"}, {"$set": data}, upsert=True)
     data.pop("_id", None)
-    return data
+    data.pop("turnstile_secret_key", None)
+    return {**data, "has_turnstile_secret": bool(
+        (await db.settings.find_one({"key": "site"}) or {}).get("turnstile_secret_key"))}
 
 # ---------------------------------------------------------------------------
 # First-run setup wizard
@@ -1341,6 +1411,11 @@ DEFAULT_SETTINGS = {
     "ad_footer": "",
     "ad_player_top": "",
     "ad_player_bottom": "",
+    "turnstile_enabled": False,
+    "turnstile_site_key": "",
+    "turnstile_login": True,
+    "turnstile_register": True,
+    "turnstile_gate": True,
 }
 
 DEFAULT_HOSTS = [
