@@ -2,50 +2,69 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../context/I18nContext";
 import { ShieldAlert, X } from "lucide-react";
 
-// Signal 1: bait element that adblockers' cosmetic filters hide.
+// Signal 1: bait element with class names that EasyList/uBlock/Ghostery hide cosmetically.
 const checkBaitElement = () =>
   new Promise((resolve) => {
     try {
       const bait = document.createElement("div");
-      bait.className = "adsbox ad-banner ad-placement pub_300x250 adsbygoogle ad textads banner-ads";
+      bait.className =
+        "pub_300x250 pub_300x250m pub_728x90 text-ad textAd text_ad text_ads text-ads " +
+        "text-ad-links ad-text adSense adBlock adContent adBanner adsbox ad-placement " +
+        "ad-banner banner_ads sponsor-ad";
+      bait.setAttribute("id", "ad-banner");
       bait.style.cssText =
-        "position:absolute;left:-9999px;top:-9999px;width:300px;height:250px;";
+        "position:absolute;left:-9999px;top:-9999px;width:300px;height:250px;background:transparent;";
       document.body.appendChild(bait);
       setTimeout(() => {
         const cs = window.getComputedStyle(bait);
         const blocked =
+          bait.offsetParent === null ||
           bait.offsetHeight === 0 ||
+          bait.offsetWidth === 0 ||
           bait.clientHeight === 0 ||
           cs.display === "none" ||
           cs.visibility === "hidden";
         bait.remove();
         resolve(blocked);
-      }, 120);
+      }, 160);
     } catch {
       resolve(false);
     }
   });
 
-// Signal 2: try loading a well-known ads script. Adblockers block the request -> rejects.
-// A slow/offline network resolves as "not blocked" (fail-open) to avoid false positives.
-const checkNetworkBait = () =>
+// Signal 2: load a real ad/tracker script that adblockers BLOCK (and do NOT surrogate).
+// onerror => blocked. A slow/offline load is treated as "not blocked" (fail-open).
+const AD_SCRIPTS = [
+  "https://static.doubleclick.net/instream/ad_status.js",
+  "https://www.googletagservices.com/tag/js/gpt.js",
+];
+const checkScriptBait = (src) =>
   new Promise((resolve) => {
     try {
-      const ctrl = new AbortController();
-      const to = setTimeout(() => { ctrl.abort(); resolve(false); }, 2500);
-      fetch("https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js", {
-        method: "HEAD", mode: "no-cors", cache: "no-store", signal: ctrl.signal,
-      })
-        .then(() => { clearTimeout(to); resolve(false); })
-        .catch((e) => { clearTimeout(to); resolve(e.name !== "AbortError"); });
+      const s = document.createElement("script");
+      let done = false;
+      const finish = (blocked) => {
+        if (done) return; done = true;
+        try { s.remove(); } catch (e) { /* noop */ }
+        resolve(blocked);
+      };
+      s.onload = () => finish(false);
+      s.onerror = () => finish(true);
+      s.src = src + "?_=" + Date.now();
+      document.body.appendChild(s);
+      setTimeout(() => finish(false), 2500);
     } catch {
       resolve(false);
     }
   });
 
 const detectAdblock = async () => {
-  const [bait, net] = await Promise.all([checkBaitElement(), checkNetworkBait()]);
-  return bait || net;
+  const results = await Promise.all([
+    checkBaitElement(),
+    checkScriptBait(AD_SCRIPTS[0]),
+    checkScriptBait(AD_SCRIPTS[1]),
+  ]);
+  return results.some(Boolean);
 };
 
 // mode: "off" | "warn" | "block"
