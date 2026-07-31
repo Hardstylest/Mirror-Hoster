@@ -1,10 +1,11 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageToggle } from "./LanguageToggle";
-import { LayoutDashboard, Shield, LogOut, Film, Plus } from "lucide-react";
+import { LayoutDashboard, Shield, LogOut, Film, Plus, Menu, X } from "lucide-react";
 
 export const DashboardLayout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -12,6 +13,7 @@ export const DashboardLayout = ({ children }) => {
   const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const nav = [
     { to: "/dashboard", key: "my-mirrors", label: t("nav.myMirrors"), icon: LayoutDashboard },
@@ -25,15 +27,31 @@ export const DashboardLayout = ({ children }) => {
 
   return (
     <div className="min-h-screen flex bg-background">
-      <aside className="w-64 shrink-0 border-r border-border bg-card/40 flex flex-col fixed h-screen">
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 inset-x-0 h-14 z-40 flex items-center justify-between px-4 border-b border-border bg-card">
+        <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
+          <Film className="text-brand shrink-0" size={20} />
+          <span className="font-display font-black text-base tracking-tight truncate">{settings.site_name}</span>
+        </Link>
+        <button data-testid="mobile-menu-button" onClick={() => setMobileOpen(true)} className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary">
+          <Menu size={22} />
+        </button>
+      </div>
+
+      {/* Backdrop for mobile drawer */}
+      {mobileOpen && <div className="md:hidden fixed inset-0 z-40 bg-black/60" onClick={() => setMobileOpen(false)} />}
+
+      <aside className={`w-64 shrink-0 border-r border-border bg-card flex flex-col fixed h-screen z-50 transition-transform duration-200
+        ${mobileOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0 md:bg-card/40`}>
         <div className="flex items-center justify-between px-6 h-16 border-b border-border">
-          <Link to="/dashboard" className="flex items-center gap-2 min-w-0">
+          <Link to="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 min-w-0">
             <Film className="text-brand shrink-0" size={22} />
             <span className="font-display font-black text-lg tracking-tight truncate">{settings.site_name}</span>
           </Link>
           <div className="flex items-center gap-2">
             <LanguageToggle />
             <ThemeToggle />
+            <button onClick={() => setMobileOpen(false)} className="md:hidden p-1 text-muted-foreground hover:text-foreground"><X size={20} /></button>
           </div>
         </div>
         <nav className="flex-1 p-4 space-y-1">
@@ -43,6 +61,7 @@ export const DashboardLayout = ({ children }) => {
               <Link
                 key={n.to}
                 to={n.to}
+                onClick={() => setMobileOpen(false)}
                 data-testid={`nav-${n.key}`}
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-md text-sm transition-colors ${
                   active ? "bg-brand/10 text-brand" : "text-muted-foreground hover:text-foreground hover:bg-secondary"
@@ -55,6 +74,7 @@ export const DashboardLayout = ({ children }) => {
           })}
           <Link
             to="/dashboard/new"
+            onClick={() => setMobileOpen(false)}
             data-testid="nav-new-mirror"
             className="flex items-center gap-3 px-4 py-2.5 mt-4 rounded-md text-sm bg-brand text-black font-semibold hover:bg-brand-hover transition-colors"
           >
@@ -75,7 +95,7 @@ export const DashboardLayout = ({ children }) => {
           </button>
         </div>
       </aside>
-      <main className="flex-1 ml-64 min-h-screen">{children}</main>
+      <main className="flex-1 md:ml-64 min-h-screen pt-14 md:pt-0">{children}</main>
     </div>
   );
 };

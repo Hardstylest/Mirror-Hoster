@@ -20,6 +20,13 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Per-movie statistics (views over time, countries, per-host).
 - Offline detection with dashboard status badges.
 
+## Implemented (2026-07-31)
+- **Database-backed hoster API keys**: API keys moved out of `.env` into the `hosts` collection, managed in the Admin Dashboard (masked password field, "leave blank to keep" behavior). `GET /api/hosts` never returns raw keys — only `has_api_key: bool`. `.env` values remain a fallback (`resolve_api_key`). Auto-migrated DoodStream/VOE/FireStream keys on startup.
+- **FireStream integration** (firestream.to): new host + `api_provider="firestream"`, online/offline + title detection via `https://firestream.to/api/file/info`. Verified online (file_code `1uuFmyaj`) and offline (bogus code) resolution end-to-end.
+- **Dynamic hoster management**: Admin can add/edit any hoster (name, domain, provider, api_key, tiers) fully from the dashboard — no server files.
+- **Responsive dashboard**: DashboardLayout now has a mobile top bar + slide-in drawer (fixes horizontal overflow on small screens); desktop unchanged.
+- Verified: 41/41 backend tests, all desktop admin flows (iteration_10).
+
 ## Implemented (2026-07-04)
 - JWT email/password auth + admin seeding (admin@mirrorstream.com / Admin@1234).
 - Hosts CRUD with country earning tiers (seeded: DoodStream & VOE with real tier data).
