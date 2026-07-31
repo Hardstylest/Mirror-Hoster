@@ -5,7 +5,8 @@ import os
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -17,6 +18,9 @@ import uuid
 import asyncio
 import secrets
 import time
+import json
+import io
+import zipfile
 import jwt
 import bcrypt
 import requests
@@ -1498,6 +1502,12 @@ class SettingsInput(BaseModel):
     antiadblock_mode: str = "off"  # "off" | "warn" | "block"
     proxycheck_enabled: bool = False
     proxycheck_key: str = ""  # blank on save = keep existing
+    opendrive_enabled: bool = False
+    opendrive_user: str = ""
+    opendrive_pass: str = ""  # blank on save = keep existing
+    opendrive_folder: str = "MirrorStream-Backups"
+    backup_schedule: str = "off"  # "off" | "daily" | "weekly"
+    backup_retention: int = 7
 
 @api_router.get("/settings")
 async def get_settings():
@@ -1511,6 +1521,8 @@ async def get_settings():
     merged["has_turnstile_secret"] = bool(secret)
     pkey = merged.pop("proxycheck_key", None)
     merged["has_proxycheck_key"] = bool(pkey)
+    opass = merged.pop("opendrive_pass", None)
+    merged["has_opendrive_pass"] = bool(opass)
     return merged
 
 @api_router.put("/admin/settings")
@@ -1522,13 +1534,17 @@ async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_us
         data.pop("turnstile_secret_key", None)
     if not data.get("proxycheck_key"):
         data.pop("proxycheck_key", None)
+    if not data.get("opendrive_pass"):
+        data.pop("opendrive_pass", None)
     await db.settings.update_one({"key": "site"}, {"$set": data}, upsert=True)
     stored = await db.settings.find_one({"key": "site"}) or {}
     data.pop("_id", None)
     data.pop("turnstile_secret_key", None)
     data.pop("proxycheck_key", None)
+    data.pop("opendrive_pass", None)
     return {**data, "has_turnstile_secret": bool(stored.get("turnstile_secret_key")),
-            "has_proxycheck_key": bool(stored.get("proxycheck_key"))}
+            "has_proxycheck_key": bool(stored.get("proxycheck_key")),
+            "has_opendrive_pass": bool(stored.get("opendrive_pass"))}
 
 # ---------------------------------------------------------------------------
 # First-run setup wizard
@@ -1685,6 +1701,10 @@ DEFAULT_SETTINGS = {
     "antiadblock_enabled": False,
     "antiadblock_mode": "off",
     "proxycheck_enabled": False,
+    "opendrive_enabled": False,
+    "opendrive_folder": "MirrorStream-Backups",
+    "backup_schedule": "off",
+    "backup_retention": 7,
 }
 
 DEFAULT_HOSTS = [
@@ -1863,6 +1883,204 @@ async def seed():
     except Exception as e:
         logger.warning(f"Could not write test_credentials.md: {e}")
 
+# ---------------------------------------------------------------------------
+# Backup / Restore + OpenDrive cloud upload
+# ---------------------------------------------------------------------------
+BACKUP_DATA_DIR = os.environ.get("BACKUP_DATA_DIR", str(ROOT_DIR / "data"))
+OD_BASE = "https://dev.opendrive.com/api/v1"
+BACKUP_PREFIX = "mirrorstream-backup-"
+
+async def build_backup_zip() -> bytes:
+    """Zip every MongoDB collection as JSON + any files under BACKUP_DATA_DIR."""
+    buf = io.BytesIO()
+    manifest = {"created_at": now_iso(), "db": os.environ["DB_NAME"], "collections": {}}
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in await db.list_collection_names():
+            docs = await db[name].find({}).to_list(100000)
+            for d in docs:
+                if isinstance(d.get("_id"), ObjectId):
+                    d["_id"] = str(d["_id"])
+            z.writestr(f"db/{name}.json", json.dumps(docs, default=str, ensure_ascii=False))
+            manifest["collections"][name] = len(docs)
+        if os.path.isdir(BACKUP_DATA_DIR):
+            for root, _, files in os.walk(BACKUP_DATA_DIR):
+                for fn in files:
+                    fp = os.path.join(root, fn)
+                    z.write(fp, f"files/{os.path.relpath(fp, BACKUP_DATA_DIR)}")
+        z.writestr("manifest.json", json.dumps(manifest, indent=2))
+    return buf.getvalue()
+
+async def restore_backup_zip(data: bytes) -> dict:
+    restored = {}
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        if "manifest.json" not in z.namelist():
+            raise HTTPException(status_code=400, detail="Invalid backup file (no manifest.json)")
+        for n in z.namelist():
+            if n.startswith("db/") and n.endswith(".json"):
+                coll = n[3:-5]
+                docs = json.loads(z.read(n) or b"[]")
+                for d in docs:
+                    _id = d.get("_id")
+                    if isinstance(_id, str) and ObjectId.is_valid(_id):
+                        d["_id"] = ObjectId(_id)
+                await db[coll].delete_many({})
+                if docs:
+                    await db[coll].insert_many(docs)
+                restored[coll] = len(docs)
+            elif n.startswith("files/") and not n.endswith("/"):
+                dest = os.path.join(BACKUP_DATA_DIR, n[len("files/"):])
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "wb") as f:
+                    f.write(z.read(n))
+    return restored
+
+def _od_login(user: str, passwd: str) -> str:
+    r = requests.post(f"{OD_BASE}/session/login.json", json={"username": user, "passwd": passwd}, timeout=30)
+    r.raise_for_status()
+    sid = r.json().get("SessionID")
+    if not sid:
+        raise RuntimeError("OpenDrive login failed (check username/password)")
+    return sid
+
+def _od_folder(sid: str, name: str) -> str:
+    r = requests.get(f"{OD_BASE}/folder/list.json/{sid}/0", timeout=30)
+    r.raise_for_status()
+    for f in (r.json().get("Folders") or []):
+        if f.get("Name") == name:
+            return f["FolderID"]
+    r = requests.post(f"{OD_BASE}/folder.json", json={
+        "session_id": sid, "folder_name": name, "folder_sub_parent": "0",
+        "folder_is_public": 0, "folder_public_upl": 0, "folder_public_display": 0, "folder_public_dnl": 0,
+    }, timeout=30)
+    r.raise_for_status()
+    return r.json()["FolderID"]
+
+def _od_upload(sid: str, folder_id: str, filename: str, data: bytes):
+    fid = requests.post(f"{OD_BASE}/upload/create_file.json",
+                        json={"session_id": sid, "folder_id": folder_id, "file_name": filename},
+                        timeout=30).json()["FileId"]
+    op = requests.post(f"{OD_BASE}/upload/open_file_upload.json",
+                       json={"session_id": sid, "file_id": fid, "file_size": len(data)}, timeout=30).json()
+    temp = op.get("TempLocation")
+    chunk = 10 * 1024 * 1024
+    offset = 0
+    while offset < len(data):
+        part = data[offset:offset + chunk]
+        requests.post(f"{OD_BASE}/upload/upload_file_chunk.json",
+                      data={"session_id": sid, "file_id": fid, "temp_location": temp,
+                            "chunk_offset": str(offset), "chunk_size": str(len(part))},
+                      files={"file_data": (filename, io.BytesIO(part), "application/octet-stream")},
+                      timeout=180).raise_for_status()
+        offset += len(part)
+    requests.post(f"{OD_BASE}/upload/close_file_upload.json",
+                  json={"session_id": sid, "file_id": fid, "file_size": len(data), "temp_location": temp},
+                  timeout=30).raise_for_status()
+    return fid
+
+def opendrive_upload_and_retain(user, passwd, folder, filename, data, retention) -> dict:
+    """Sync (run in a thread). Uploads the backup then trims old backups to `retention`."""
+    sid = _od_login(user, passwd)
+    folder_id = _od_folder(sid, folder)
+    fid = _od_upload(sid, folder_id, filename, data)
+    deleted = 0
+    try:
+        listing = requests.get(f"{OD_BASE}/folder/list.json/{sid}/{folder_id}", timeout=30).json()
+        backups = [f for f in (listing.get("Files") or []) if str(f.get("Name", "")).startswith(BACKUP_PREFIX)]
+        backups.sort(key=lambda f: f.get("Name", ""), reverse=True)
+        for old in backups[max(1, int(retention)):]:
+            oid = old.get("FileId") or old.get("FileID")
+            if oid:
+                requests.delete(f"{OD_BASE}/file.json/{sid}/{oid}", timeout=30)
+                deleted += 1
+    except Exception as e:
+        logger.warning(f"OpenDrive retention cleanup failed: {type(e).__name__}")
+    return {"ok": True, "file_id": fid, "size": len(data), "deleted": deleted}
+
+
+@api_router.get("/admin/backup/download")
+async def backup_download(admin: dict = Depends(get_admin_user)):
+    data = await build_backup_zip()
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    fn = f"{BACKUP_PREFIX}{ts}.zip"
+    return StreamingResponse(io.BytesIO(data), media_type="application/zip",
+                             headers={"Content-Disposition": f'attachment; filename="{fn}"'})
+
+@api_router.post("/admin/backup/run")
+async def backup_run(admin: dict = Depends(get_admin_user)):
+    s = await db.settings.find_one({"key": "site"}) or {}
+    if not (s.get("opendrive_enabled") and s.get("opendrive_user") and s.get("opendrive_pass")):
+        raise HTTPException(status_code=400, detail="OpenDrive is not configured/enabled")
+    data = await build_backup_zip()
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    fn = f"{BACKUP_PREFIX}{ts}.zip"
+    try:
+        res = await asyncio.to_thread(opendrive_upload_and_retain, s["opendrive_user"], s["opendrive_pass"],
+                                      s.get("opendrive_folder", "MirrorStream-Backups"), fn, data,
+                                      int(s.get("backup_retention", 7)))
+    except Exception as e:
+        logger.warning(f"backup_run upload failed: {type(e).__name__}: {e}")
+        await db.settings.update_one({"key": "site"}, {"$set": {"last_backup_at": now_iso(), "last_backup_status": "error"}})
+        raise HTTPException(status_code=502, detail="OpenDrive upload failed. Check the credentials.")
+    await db.settings.update_one({"key": "site"}, {"$set": {"last_backup_at": now_iso(), "last_backup_status": "ok"}})
+    return {"ok": True, "filename": fn, "size_bytes": res["size"], "deleted_old": res["deleted"]}
+
+@api_router.post("/admin/backup/test-opendrive")
+async def backup_test_opendrive(admin: dict = Depends(get_admin_user)):
+    s = await db.settings.find_one({"key": "site"}) or {}
+    if not (s.get("opendrive_user") and s.get("opendrive_pass")):
+        return {"ok": False, "message": "No OpenDrive credentials stored"}
+    try:
+        def _t():
+            sid = _od_login(s["opendrive_user"], s["opendrive_pass"])
+            fid = _od_folder(sid, s.get("opendrive_folder", "MirrorStream-Backups"))
+            return fid
+        folder_id = await asyncio.to_thread(_t)
+        return {"ok": True, "message": "Connection OK", "folder_id": folder_id}
+    except Exception as e:
+        logger.warning(f"opendrive test failed: {type(e).__name__}")
+        return {"ok": False, "message": "Login failed. Check username/password."}
+
+@api_router.post("/admin/backup/restore")
+async def backup_restore(file: UploadFile = File(...), admin: dict = Depends(get_admin_user)):
+    raw = await file.read()
+    if len(raw) > 200 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Backup file too large")
+    try:
+        restored = await restore_backup_zip(raw)
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Not a valid ZIP backup file")
+    return {"ok": True, "restored": restored}
+
+
+async def backup_scheduler():
+    """Hourly wake-up; runs an OpenDrive backup when due per the admin schedule."""
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            s = await db.settings.find_one({"key": "site"}) or {}
+            sched = s.get("backup_schedule", "off")
+            if sched not in ("daily", "weekly"):
+                continue
+            if not (s.get("opendrive_enabled") and s.get("opendrive_user") and s.get("opendrive_pass")):
+                continue
+            interval = 86400 if sched == "daily" else 604800
+            last = s.get("backup_auto_at")
+            now = datetime.now(timezone.utc)
+            if last and (now - datetime.fromisoformat(last)).total_seconds() < interval:
+                continue
+            data = await build_backup_zip()
+            fn = f"{BACKUP_PREFIX}{now.strftime('%Y%m%d-%H%M%S')}.zip"
+            res = await asyncio.to_thread(opendrive_upload_and_retain, s["opendrive_user"], s["opendrive_pass"],
+                                          s.get("opendrive_folder", "MirrorStream-Backups"), fn, data,
+                                          int(s.get("backup_retention", 7)))
+            await db.settings.update_one({"key": "site"}, {"$set": {
+                "backup_auto_at": now.isoformat(), "last_backup_at": now.isoformat(),
+                "last_backup_status": "ok" if res.get("ok") else "error"}})
+            logger.info(f"Scheduled backup uploaded: {fn}")
+        except Exception as e:
+            logger.error(f"backup_scheduler error: {e}")
+
+
 async def offline_checker():
     interval = int(os.environ.get("CHECK_INTERVAL_HOURS", "6")) * 3600
     while True:
@@ -1892,6 +2110,7 @@ async def on_startup():
     await seed()
     asyncio.create_task(offline_checker())
     asyncio.create_task(tier_updater())
+    asyncio.create_task(backup_scheduler())
 
 @app.on_event("shutdown")
 async def on_shutdown():

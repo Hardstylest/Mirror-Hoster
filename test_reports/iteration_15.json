@@ -1,0 +1,50 @@
+{
+  "summary": "Frontend-only Admin UI verification completed through the public URL on desktop and 390px mobile. Admin login, Backup/Security rendering, ZIP download (HTTP 200), safe restore of that same fresh ZIP (251 entries), Security controls, and mobile overflow checks passed. OpenDrive expectations failed because the live settings response contains no stored OpenDrive configuration: the password placeholder is empty, the connection test reports 'No OpenDrive credentials stored', and the manual upload button is disabled.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Admin > Backup > OpenDrive",
+        "issue": "The live UI shows OpenDrive disabled with an empty username, no saved-password placeholder, schedule 'off', and a disabled 'Jetzt zu OpenDrive sichern' button, contrary to the requested preconfigured state.",
+        "selector": "[data-testid='opendrive-section']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "OpenDrive connection test and manual backup upload",
+        "issue": "GET /api/settings returned opendrive_enabled=false, no opendrive_user, and has_opendrive_pass=false. Consequently POST /api/admin/backup/test-opendrive returned HTTP 200 with {ok:false,message:'No OpenDrive credentials stored'} and an error toast; backup-run-button was disabled, so the real upload flow could not be executed.",
+        "affected_selectors": [
+          "[data-testid='opendrive-pass']",
+          "[data-testid='opendrive-test-button']",
+          "[data-testid='backup-run-button']"
+        ]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Restore/provision the expected OpenDrive username, password, enabled flag, schedule, folder, and retention in the public preview database without exposing the password.",
+    "Re-test the saved-password placeholder, 'Connection OK' toast, enabled manual-upload button, and real upload filename toast after configuration is restored."
+  ],
+  "critical_code_review_comments": [
+    "AdminDashboard.jsx is 934 lines, above the 700-line maintainability threshold; extract Backup, Security, host editor, and user management into focused components/hooks.",
+    "Admin backup configuration is sourced from the unauthenticated GET /api/settings response, which can expose the OpenDrive username/email and operational backup metadata when configured. Use a separate admin-only settings endpoint for private integration configuration and secret-presence flags."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_15.json"
+  ],
+  "success_rate": {
+    "backend": "Not tested (frontend-only request)",
+    "frontend": "75% of requested feature groups passed; OpenDrive configuration/test/manual-upload expectations failed"
+  },
+  "seed_data_creation": "No seed data created. A current backup was downloaded and that exact same ZIP was restored after accepting the confirmation dialog; 251 entries were reported restored with no intended net data change. No OpenDrive upload occurred because the button was disabled.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Desktop: login passed; all requested Backup controls rendered; schedule options were off/daily/weekly; download returned 200 with a .zip and German success toast; safe same-file restore returned 200 and 'Wiederhergestellt: 251 Einträge'; Security anti-adblock options off/warn/block and VPN controls passed. Live /api/settings backup state was opendrive_enabled=false, opendrive_user absent, has_opendrive_pass=false, folder MirrorStream-Backups, schedule off, retention 7. Mobile Backup and Security both had document/body scrollWidth=390 at innerWidth=390; panels were x=32,width=326. No page or console JavaScript errors were observed.",
+  "rca_of_the_issue": "This is a live environment configuration/data mismatch rather than a broken click handler. Before any restore was performed, GET /api/settings already returned no OpenDrive username/password flag and enabled=false. AdminDashboard initializes siteForm directly from that response, so it correctly renders an empty password placeholder and disables backup-run-button; the test endpoint independently confirms the persisted credentials are absent."
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import api, { faviconUrl, formatApiError } from "../lib/api";
 import { useSettings } from "../context/SettingsContext";
@@ -6,7 +6,7 @@ import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup,
 } from "lucide-react";
 
 const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
@@ -293,6 +293,59 @@ export default function AdminDashboard() {
   const [userModal, setUserModal] = useState(null); // {mode:'create'} | {mode:'password', user}
   const [userSearch, setUserSearch] = useState("");
   const [loginAlerts, setLoginAlerts] = useState([]);
+  const [backupBusy, setBackupBusy] = useState("");
+  const restoreRef = useRef(null);
+
+  const downloadBackup = async () => {
+    setBackupBusy("download");
+    try {
+      const res = await api.get("/admin/backup/download", { responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mirrorstream-backup-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(lang === "de" ? "Backup heruntergeladen" : "Backup downloaded");
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Fehler"); }
+    setBackupBusy("");
+  };
+
+  const testOpenDrive = async () => {
+    setBackupBusy("test");
+    try {
+      const { data } = await api.post("/admin/backup/test-opendrive");
+      data.ok ? toast.success(data.message) : toast.error(data.message);
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Fehler"); }
+    setBackupBusy("");
+  };
+
+  const runBackup = async () => {
+    setBackupBusy("run");
+    try {
+      const { data } = await api.post("/admin/backup/run");
+      toast.success((lang === "de" ? "Backup hochgeladen: " : "Backup uploaded: ") + data.filename);
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Fehler"); }
+    setBackupBusy("");
+  };
+
+  const restoreBackup = async (fileObj) => {
+    if (!fileObj) return;
+    if (!window.confirm(lang === "de"
+      ? "Wiederherstellen überschreibt ALLE aktuellen Daten mit dem Backup. Fortfahren?"
+      : "Restoring overwrites ALL current data with the backup. Continue?")) return;
+    setBackupBusy("restore");
+    try {
+      const fd = new FormData();
+      fd.append("file", fileObj);
+      const { data } = await api.post("/admin/backup/restore", fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const n = Object.values(data.restored || {}).reduce((a, b) => a + b, 0);
+      toast.success((lang === "de" ? "Wiederhergestellt: " : "Restored: ") + n + (lang === "de" ? " Einträge" : " records"));
+      load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Fehler"); }
+    setBackupBusy("");
+    if (restoreRef.current) restoreRef.current.value = "";
+  };
 
   const loadAlerts = useCallback(async () => {
     try {
@@ -333,6 +386,12 @@ export default function AdminDashboard() {
     antiadblock_mode: settings.antiadblock_mode || "off",
     proxycheck_enabled: !!settings.proxycheck_enabled,
     proxycheck_key: "",
+    opendrive_enabled: !!settings.opendrive_enabled,
+    opendrive_user: settings.opendrive_user || "",
+    opendrive_pass: "",
+    opendrive_folder: settings.opendrive_folder || "MirrorStream-Backups",
+    backup_schedule: settings.backup_schedule || "off",
+    backup_retention: settings.backup_retention || 7,
   }); }, [settings]);
 
   const saveSite = async () => {
@@ -400,6 +459,7 @@ export default function AdminDashboard() {
     { id: "settings", label: t("admin.tab.settings") },
     { id: "ads", label: t("admin.tab.ads") },
     { id: "security", label: lang === "de" ? "Sicherheit" : "Security" },
+    { id: "backup", label: "Backup" },
   ];
 
   return (
@@ -746,6 +806,114 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {tab === "backup" && siteForm && (
+          <div className="w-full max-w-2xl space-y-6" data-testid="backup-panel">
+            <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <DatabaseBackup className="text-brand" size={20} />
+                <h3 className="font-display font-bold text-lg">{lang === "de" ? "Backup erstellen" : "Create backup"}</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {lang === "de"
+                  ? "Sichert die komplette Datenbank (Nutzer, Hoster, Mirrors, Einstellungen, Logs) plus Server-Dateien als ZIP."
+                  : "Backs up the whole database (users, hosts, mirrors, settings, logs) plus server files as a ZIP."}
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <button onClick={downloadBackup} disabled={!!backupBusy} data-testid="backup-download-button"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+                  <Download size={18} /> {backupBusy === "download" ? "…" : (lang === "de" ? "Jetzt herunterladen" : "Download now")}
+                </button>
+                <button onClick={runBackup} disabled={!!backupBusy || !siteForm.opendrive_enabled} data-testid="backup-run-button"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md border border-border hover:border-brand hover:text-brand disabled:opacity-50 transition-colors">
+                  <CloudUpload size={18} /> {backupBusy === "run" ? "…" : (lang === "de" ? "Jetzt zu OpenDrive sichern" : "Back up to OpenDrive now")}
+                </button>
+              </div>
+              {settings.last_backup_at && (
+                <p className="text-xs text-muted-foreground" data-testid="last-backup-info">
+                  {lang === "de" ? "Letztes Backup: " : "Last backup: "}
+                  {new Date(settings.last_backup_at).toLocaleString()} ({settings.last_backup_status})
+                </p>
+              )}
+            </div>
+
+            <div className="bg-card border border-border rounded-lg p-6 space-y-4" data-testid="opendrive-section">
+              <h3 className="font-display font-bold text-lg">{lang === "de" ? "OpenDrive Cloud-Upload" : "OpenDrive cloud upload"}</h3>
+              <label className="flex items-center gap-3 cursor-pointer" data-testid="opendrive-toggle">
+                <input type="checkbox" checked={!!siteForm.opendrive_enabled}
+                  onChange={(e) => setSiteForm({ ...siteForm, opendrive_enabled: e.target.checked })}
+                  className="w-4 h-4 accent-brand" />
+                <span className="text-sm">{lang === "de" ? "OpenDrive-Upload aktivieren" : "Enable OpenDrive upload"}</span>
+              </label>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-muted-foreground">{lang === "de" ? "Benutzername / E-Mail" : "Username / email"}</label>
+                  <input data-testid="opendrive-user" value={siteForm.opendrive_user} autoComplete="off"
+                    onChange={(e) => setSiteForm({ ...siteForm, opendrive_user: e.target.value })}
+                    className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none" />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">{lang === "de" ? "Passwort" : "Password"}</label>
+                  <input data-testid="opendrive-pass" type="password" value={siteForm.opendrive_pass} autoComplete="new-password"
+                    onChange={(e) => setSiteForm({ ...siteForm, opendrive_pass: e.target.value })}
+                    placeholder={settings.has_opendrive_pass ? "•••••• (gespeichert)" : ""}
+                    className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none" />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">{lang === "de" ? "Zielordner" : "Target folder"}</label>
+                  <input data-testid="opendrive-folder" value={siteForm.opendrive_folder}
+                    onChange={(e) => setSiteForm({ ...siteForm, opendrive_folder: e.target.value })}
+                    className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none" />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-sm text-muted-foreground">{lang === "de" ? "Automatischer Zeitplan" : "Automatic schedule"}</label>
+                  <select data-testid="backup-schedule" value={siteForm.backup_schedule}
+                    onChange={(e) => setSiteForm({ ...siteForm, backup_schedule: e.target.value })}
+                    className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none">
+                    <option value="off">{lang === "de" ? "Aus" : "Off"}</option>
+                    <option value="daily">{lang === "de" ? "Täglich" : "Daily"}</option>
+                    <option value="weekly">{lang === "de" ? "Wöchentlich" : "Weekly"}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">{lang === "de" ? "Aufbewahrung (Anzahl)" : "Retention (count)"}</label>
+                  <input data-testid="backup-retention" type="number" min="1" value={siteForm.backup_retention}
+                    onChange={(e) => setSiteForm({ ...siteForm, backup_retention: parseInt(e.target.value || "7", 10) })}
+                    className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none" />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <button onClick={saveSite} disabled={savingSite} data-testid="save-backup-button"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+                  <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
+                </button>
+                <button onClick={testOpenDrive} disabled={!!backupBusy} data-testid="opendrive-test-button"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md border border-border hover:border-brand hover:text-brand disabled:opacity-50 transition-colors">
+                  {backupBusy === "test" ? "…" : (lang === "de" ? "Verbindung testen" : "Test connection")}
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-card border border-offline/30 rounded-lg p-6 space-y-4" data-testid="restore-section">
+              <div className="flex items-center gap-2">
+                <Upload className="text-offline" size={20} />
+                <h3 className="font-display font-bold text-lg">{lang === "de" ? "Wiederherstellen" : "Restore"}</h3>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {lang === "de"
+                  ? "Achtung: Das Einspielen eines Backups überschreibt ALLE aktuellen Daten unwiderruflich."
+                  : "Warning: restoring a backup irreversibly overwrites ALL current data."}
+              </p>
+              <input ref={restoreRef} type="file" accept=".zip" data-testid="restore-file-input"
+                onChange={(e) => restoreBackup(e.target.files?.[0])}
+                disabled={!!backupBusy}
+                className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-offline file:text-white file:font-semibold hover:file:opacity-90 file:cursor-pointer" />
+              {backupBusy === "restore" && <p className="text-xs text-brand">{lang === "de" ? "Stelle wieder her…" : "Restoring…"}</p>}
             </div>
           </div>
         )}
