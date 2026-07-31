@@ -133,6 +133,9 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Auf der **Offline-Streams-Seite** hat jeder Offline-Hoster-Link jetzt einen „Entfernen"-Button (neben „Auto-Fix"), um den toten Hoster direkt zu löschen — ohne den Mirror erst zu editieren.
 - Endpoint `DELETE /api/mirrors/{mirror_id}/link/{host_id}` (User-scoped/Admin): entfernt genau diesen Host-Link; war es der letzte Link, wird der ganze Mirror gelöscht (+ views). Rückgabe `{deleted_mirror, remaining}`. testid `remove-link-{mid}-{hid}`, i18n `offline.removeLink/removeConfirm/removed/removedMirror` (DE/EN, Bestätigungsdialog).
 - Verifiziert: 404 bei falschem Host, `remaining:1` nach 1. Löschung, `deleted_mirror:true` nach letzter, Wegwerf-Mirror sauber weg; UI zeigt 9 „Entfernen"-Buttons.
+
+## Cover-Vorschau bei Mouseover (2026-06)
+- Im Dashboard („Meine Mirrors") zeigt das Überfahren des Cover-Thumbnails eine vergrößerte, schwebende Vorschau (CSS `group/cover` hover, w-80, z-50, `object-contain`, Schatten). Kleines Cover bekommt beim Hover einen Marken-Ring + `cursor-zoom-in`. testid `cover-{id}`. Verifiziert per Screenshot.
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
 - P2: Email verification + password reset UI; referral/earnings estimate per mirror.

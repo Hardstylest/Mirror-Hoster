@@ -305,7 +305,12 @@ export default function Dashboard() {
                   <div className="flex items-start gap-4 min-w-0">
                     <input type="checkbox" checked={selected.has(m.id)} onChange={() => toggleSelect(m.id)} data-testid={`select-${m.id}`} className="mt-1 w-4 h-4 accent-brand shrink-0" />
                     {(() => { const thumb = m.links.find((l) => l.thumbnail)?.thumbnail; return thumb ? (
-                      <img src={thumb} alt="" className="w-28 h-16 rounded-md object-cover border border-border shrink-0" onError={(e) => (e.currentTarget.style.display = "none")} />
+                      <div className="relative group/cover shrink-0" data-testid={`cover-${m.id}`}>
+                        <img src={thumb} alt="" className="w-28 h-16 rounded-md object-cover border border-border cursor-zoom-in transition-transform group-hover/cover:ring-2 group-hover/cover:ring-brand" onError={(e) => (e.currentTarget.style.display = "none")} />
+                        <div className="pointer-events-none absolute left-0 top-full mt-2 z-50 hidden group-hover/cover:block">
+                          <img src={thumb} alt="" className="w-80 max-w-[80vw] max-h-[60vh] rounded-lg object-contain bg-black border border-border shadow-2xl" />
+                        </div>
+                      </div>
                     ) : (
                       <div className="w-28 h-16 rounded-md bg-surface border border-border shrink-0 flex items-center justify-center"><Film size={20} className="text-muted-foreground" /></div>
                     ); })()}
