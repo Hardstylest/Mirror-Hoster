@@ -1,8 +1,12 @@
 """MirrorStream backend API tests."""
+import hashlib
+import io
+import json
 import os
 import re
 import uuid
 import time
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -1542,3 +1546,155 @@ class TestIteration14Fixes:
         finally:
             deleted = requests.delete(f"{API}/mirrors/{mirror['id']}", headers=headers)
             assert deleted.status_code == 200, deleted.text
+
+
+# ---- Backup server-file fix and safe restore verification (iteration 17) ----
+class TestBackupServerFilesAndRestore:
+    """Backup ZIP contents, settings privacy, and same-snapshot restore safety."""
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_backup_contains_config_db_and_restores_without_overwriting_live_env(self, admin_token):
+        headers = self._headers(admin_token)
+
+        # Settings privacy/config regression before the destructive restore exercise.
+        public_before = requests.get(f"{API}/settings", timeout=30)
+        assert public_before.status_code == 200, public_before.text
+        public_data = public_before.json()
+        for private_key in ("opendrive_user", "opendrive_pass", "backup_schedule"):
+            assert private_key not in public_data, f"Public settings leaked {private_key}"
+
+        admin_before = requests.get(f"{API}/admin/settings", headers=headers, timeout=30)
+        assert admin_before.status_code == 200, admin_before.text
+        admin_data = admin_before.json()
+        assert admin_data["opendrive_enabled"] is True, admin_data
+        assert admin_data["backup_schedule"] == "daily", admin_data
+        assert admin_data["has_opendrive_pass"] is True, admin_data
+        assert "opendrive_pass" not in admin_data
+
+        unauthorized = requests.get(f"{API}/admin/backup/download", timeout=30)
+        assert unauthorized.status_code == 401, unauthorized.text
+
+        downloaded = requests.get(
+            f"{API}/admin/backup/download", headers=headers, timeout=120
+        )
+        assert downloaded.status_code == 200, downloaded.text
+        assert downloaded.headers.get("content-type", "").startswith("application/zip")
+        assert downloaded.content.startswith(b"PK")
+
+        with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+            entries = archive.namelist()
+            required = {
+                "manifest.json",
+                "config/backend.env",
+                "config/frontend.env",
+                "db/users.json",
+                "db/hosts.json",
+                "db/settings.json",
+            }
+            assert required.issubset(entries), sorted(required - set(entries))
+            assert len(entries) == len(set(entries)), "Backup contains duplicate ZIP entries"
+            assert all(not name.startswith("/") and ".." not in Path(name).parts for name in entries)
+
+            manifest = json.loads(archive.read("manifest.json"))
+            assert manifest["config"] == ["backend.env", "frontend.env"], manifest
+            for collection in ("users", "hosts", "settings"):
+                assert collection in manifest["collections"], manifest
+                assert isinstance(manifest["collections"][collection], int)
+                assert manifest["collections"][collection] >= 1
+                docs = json.loads(archive.read(f"db/{collection}.json"))
+                assert isinstance(docs, list)
+                assert len(docs) == manifest["collections"][collection]
+
+            archived_backend_env = archive.read("config/backend.env")
+            archived_frontend_env = archive.read("config/frontend.env")
+            file_entries = [name for name in entries if name.startswith("files/") and not name.endswith("/")]
+            assert manifest["files"] == len(file_entries), manifest
+
+        live_backend_path = Path("/app/backend/.env")
+        live_frontend_path = Path("/app/frontend/.env")
+        live_backend_before = live_backend_path.read_bytes()
+        live_frontend_before = live_frontend_path.read_bytes()
+        backend_hash_before = hashlib.sha256(live_backend_before).hexdigest()
+        frontend_hash_before = hashlib.sha256(live_frontend_before).hexdigest()
+
+        restored = requests.post(
+            f"{API}/admin/backup/restore",
+            headers=headers,
+            files={"file": ("fresh-current-backup.zip", downloaded.content, "application/zip")},
+            timeout=180,
+        )
+        assert restored.status_code == 200, restored.text
+        restore_data = restored.json()
+        assert restore_data["ok"] is True, restore_data
+        restored_counts = restore_data["restored"]
+        assert restored_counts["_config_files"] == 2, restored_counts
+        for collection in ("users", "hosts", "settings"):
+            assert restored_counts[collection] == manifest["collections"][collection]
+
+        assert hashlib.sha256(live_backend_path.read_bytes()).hexdigest() == backend_hash_before
+        assert hashlib.sha256(live_frontend_path.read_bytes()).hexdigest() == frontend_hash_before
+        assert live_backend_path.read_bytes() == live_backend_before
+        assert live_frontend_path.read_bytes() == live_frontend_before
+        assert Path("/app/backend/data/restored-config/backend.env").read_bytes() == archived_backend_env
+        assert Path("/app/backend/data/restored-config/frontend.env").read_bytes() == archived_frontend_env
+
+        # The original token/user survives, and both public API and another backup stay healthy.
+        me_after = requests.get(f"{API}/auth/me", headers=headers, timeout=30)
+        assert me_after.status_code == 200, me_after.text
+        assert me_after.json()["email"] == ADMIN_EMAIL
+        settings_after = requests.get(f"{API}/settings", timeout=30)
+        assert settings_after.status_code == 200, settings_after.text
+        for private_key in ("opendrive_user", "opendrive_pass", "backup_schedule"):
+            assert private_key not in settings_after.json()
+
+        admin_after = requests.get(f"{API}/admin/settings", headers=headers, timeout=30)
+        assert admin_after.status_code == 200, admin_after.text
+        assert admin_after.json()["opendrive_enabled"] is True
+        assert admin_after.json()["backup_schedule"] == "daily"
+        assert admin_after.json()["has_opendrive_pass"] is True
+        assert "opendrive_pass" not in admin_after.json()
+
+        second_download = requests.get(
+            f"{API}/admin/backup/download", headers=headers, timeout=120
+        )
+        assert second_download.status_code == 200, second_download.text
+        with zipfile.ZipFile(io.BytesIO(second_download.content)) as second_archive:
+            assert "config/backend.env" in second_archive.namelist()
+            assert "config/frontend.env" in second_archive.namelist()
+
+
+    def test_preview_backup_has_no_non_media_restored_config_in_files_namespace(self, admin_token):
+        response = requests.get(
+            f"{API}/admin/backup/download", headers=self._headers(admin_token), timeout=120
+        )
+        assert response.status_code == 200, response.text
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            entries = archive.namelist()
+            manifest = json.loads(archive.read("manifest.json"))
+            file_entries = [name for name in entries if name.startswith("files/") and not name.endswith("/")]
+        assert manifest["files"] == 0, manifest
+        assert file_entries == [], file_entries
+
+    def test_restore_rejects_config_path_traversal(self, admin_token):
+        escaped = Path("/app/backend/TEST_restore_escape.txt")
+        escaped.unlink(missing_ok=True)
+        malicious = io.BytesIO()
+        with zipfile.ZipFile(malicious, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("manifest.json", json.dumps({"collections": {}}))
+            archive.writestr("config/../../TEST_restore_escape.txt", b"TEST_ESCAPE")
+        try:
+            response = requests.post(
+                f"{API}/admin/backup/restore",
+                headers=self._headers(admin_token),
+                files={"file": ("TEST_traversal.zip", malicious.getvalue(), "application/zip")},
+                timeout=30,
+            )
+            assert response.status_code == 400, response.text
+            assert not escaped.exists(), "Restore wrote outside BACKUP_DATA_DIR/restored-config"
+        finally:
+            escaped.unlink(missing_ok=True)
+
+

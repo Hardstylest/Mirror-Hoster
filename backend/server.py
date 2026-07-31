@@ -1900,9 +1900,11 @@ OD_BASE = "https://dev.opendrive.com/api/v1"
 BACKUP_PREFIX = "mirrorstream-backup-"
 
 async def build_backup_zip() -> bytes:
-    """Zip every MongoDB collection as JSON + any files under BACKUP_DATA_DIR."""
+    """Zip every MongoDB collection as JSON + server config files (.env) + any files
+    under BACKUP_DATA_DIR (e.g. future uploads)."""
     buf = io.BytesIO()
-    manifest = {"created_at": now_iso(), "db": os.environ["DB_NAME"], "collections": {}}
+    manifest = {"created_at": now_iso(), "db": os.environ["DB_NAME"], "collections": {}, "config": [], "files": 0}
+    os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for name in await db.list_collection_names():
             docs = await db[name].find({}).to_list(100000)
@@ -1911,11 +1913,19 @@ async def build_backup_zip() -> bytes:
                     d["_id"] = str(d["_id"])
             z.writestr(f"db/{name}.json", json.dumps(docs, default=str, ensure_ascii=False))
             manifest["collections"][name] = len(docs)
+        # Server configuration files (for disaster recovery / moving servers).
+        for label, path in [("backend.env", ROOT_DIR / ".env"),
+                            ("frontend.env", ROOT_DIR.parent / "frontend" / ".env")]:
+            if os.path.isfile(path):
+                z.write(str(path), f"config/{label}")
+                manifest["config"].append(label)
+        # Arbitrary server data files (uploads etc.) placed under BACKUP_DATA_DIR.
         if os.path.isdir(BACKUP_DATA_DIR):
             for root, _, files in os.walk(BACKUP_DATA_DIR):
                 for fn in files:
                     fp = os.path.join(root, fn)
                     z.write(fp, f"files/{os.path.relpath(fp, BACKUP_DATA_DIR)}")
+                    manifest["files"] += 1
         z.writestr("manifest.json", json.dumps(manifest, indent=2))
     return buf.getvalue()
 
@@ -1941,6 +1951,14 @@ async def restore_backup_zip(data: bytes) -> dict:
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with open(dest, "wb") as f:
                     f.write(z.read(n))
+            elif n.startswith("config/") and not n.endswith("/"):
+                # Never overwrite the LIVE .env (would break the running server). Extract the
+                # backed-up config to a review folder so the admin can apply it manually.
+                dest = os.path.join(BACKUP_DATA_DIR, "restored-config", n[len("config/"):])
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "wb") as f:
+                    f.write(z.read(n))
+                restored["_config_files"] = restored.get("_config_files", 0) + 1
     return restored
 
 def _od_login(user: str, passwd: str) -> str:

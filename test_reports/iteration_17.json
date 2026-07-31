@@ -1,0 +1,56 @@
+{
+  "summary": "Backend-only backup/restore verification completed through the public URL. The requested happy path passed: authenticated ZIP download contained config/backend.env, config/frontend.env, manifest.json, and db/users.json, db/hosts.json, db/settings.json; manifest.config was exactly [\"backend.env\",\"frontend.env\"]. Restoring that exact fresh backup returned 200 with matching collection counts and two config files, preserved both live .env files byte-for-byte, extracted configs under data/restored-config, and left auth, /api/settings, admin settings, and a second backup operational. Additional security/edge testing found unsafe ZIP path traversal and restored-config files being re-included under files/.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/admin/backup/restore",
+        "issue": "ZIP member paths are joined without containment validation. A crafted config/../../TEST_restore_escape.txt entry returned 200 and wrote outside BACKUP_DATA_DIR/restored-config; the same pattern can target backend/.env, contradicting the restore safety guarantee. The test removed its harmless marker afterward.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/admin/backup/download",
+        "issue": "BACKUP_DATA_DIR is walked wholesale, so config files created by a prior restore are re-exported as files/restored-config/backend.env and files/restored-config/frontend.env. manifest.files is 2 instead of the expected 0 when no uploaded media exists. Exclude restored-config from the files/ scan."
+      },
+      {
+        "endpoint": "OPTIONS /api/auth/login",
+        "issue": "Credentialed CORS playbook check failed: CORS_ORIGINS is wildcard, preflight returns Access-Control-Allow-Origin: * and no Access-Control-Allow-Credentials. HttpOnly cookie auth therefore cannot be used cross-origin."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_iteration_17_required_final.xml",
+    "/app/test_reports/pytest/pytest_iteration_17_backup_final.xml",
+    "/app/test_reports/pytest/pytest_iteration_17_auth.xml"
+  ],
+  "action_items": [
+    "Reject absolute and traversal ZIP member names by resolving each destination and verifying it remains under the intended restore root before writing; validate every archive member before any DB deletion or file extraction.",
+    "Exclude BACKUP_DATA_DIR/restored-config from build_backup_zip files/ traversal so restored configuration is not duplicated as server data.",
+    "Configure explicit trusted CORS origins with credentials enabled if cross-origin cookie authentication is required, then rerun the auth playbook and backup security tests."
+  ],
+  "critical_code_review_comments": [
+    "restore_backup_zip directly concatenates attacker-controlled ZIP names at lines 1950 and 1957; os.path.join does not prevent ../ escape. Add a shared safe-destination helper using Path.resolve()/relative_to() and reject unsafe archives before making changes.",
+    "Restore is non-atomic: each collection is deleted before all archive JSON and paths are validated. A malformed later entry can leave a partially restored database. Parse and validate the full archive first and use a transaction where deployment topology supports it.",
+    "backend/server.py is 2164 lines, above the 700-line maintainability threshold; extract backup/restore, auth, settings, and provider integrations into focused modules."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/iteration_17.json"
+  ],
+  "success_rate": {
+    "backend": "57% overall (4/7 targeted backup/security/auth checks passed); 100% of requested fresh-backup happy-path and settings-regression checks passed",
+    "frontend": "Not tested (backend-only request)"
+  },
+  "seed_data_creation": "No application seed data created. Downloaded/restored fresh current backups only. Restore generated /app/backend/data/restored-config/backend.env and frontend.env as intended. A harmless traversal marker was created during the security reproduction and deleted in test cleanup. OpenDrive remained enabled with schedule daily and has_opendrive_pass=true; no cloud upload or settings change was performed.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The core required test is TestBackupServerFilesAndRestore::test_backup_contains_config_db_and_restores_without_overwriting_live_env and passed repeatedly. It checks ZIP entries/manifest/counts, unauthorized access, same-snapshot restore, exact SHA-256/byte preservation of live backend and frontend .env, restored-config bytes, surviving token, public settings privacy, OpenDrive enabled/daily/password flag, and post-restore redownload. Edge tests intentionally remain failing until fixed: manifest.files is currently 2 due to files/restored-config/* duplication, and config/../../ traversal is accepted. Auth playbook results: HttpOnly cookie pass, bcrypt $2b$ pass, five-failure lockout pass, credentialed explicit-origin CORS fail. seed() password-change behavior was confirmed by code review at server.py:1814-1816 but was not runtime-mutated to avoid risking the live admin account.",
+  "rca_of_the_issue": "The original missing-server-files bug is fixed by explicitly adding backend/.env and frontend/.env as config entries. However, restore trusts ZIP entry names and writes os.path.join(BACKUP_DATA_DIR, 'restored-config', suffix) without normalizing/containing the result, enabling directory traversal. Separately, build_backup_zip recursively scans the same BACKUP_DATA_DIR used for restored-config, so restored config becomes ordinary files/ content in every later backup."
+}
