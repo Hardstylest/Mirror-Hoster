@@ -17,6 +17,25 @@ function HostEditor({ host, onClose, onSaved }) {
          : { ...emptyHost, tiers: [{ name: "Tier 1", rate: 20, countries: "" }] }
   );
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  const testKey = async () => {
+    setTesting(true);
+    try {
+      const { data } = await api.post("/hosts/test-key", {
+        api_provider: form.api_provider || null,
+        api_key: form.api_key ? form.api_key : null,
+        host_id: host?.id || null,
+      });
+      if (data.ok) {
+        const extra = data.email ? ` (${data.email})` : "";
+        toast.success(`${data.message}${extra}`);
+      } else {
+        toast.error(data.message || "Invalid key");
+      }
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    setTesting(false);
+  };
 
   const setTier = (i, key, val) => setForm((f) => {
     const tiers = [...f.tiers];
@@ -93,10 +112,17 @@ function HostEditor({ host, onClose, onSaved }) {
           {form.api_provider && (
             <div>
               <label className="text-sm text-muted-foreground">{tr("admin.host.apiKey")}</label>
-              <input data-testid="host-api-key-input" type="password" autoComplete="new-password"
-                value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                placeholder={host?.has_api_key ? "•••••••••••••" : tr("admin.host.apiKeyEnter")}
-                className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+              <div className="flex items-center gap-2 mt-1">
+                <input data-testid="host-api-key-input" type="password" autoComplete="new-password"
+                  value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                  placeholder={host?.has_api_key ? "•••••••••••••" : tr("admin.host.apiKeyEnter")}
+                  className="flex-1 bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+                <button type="button" onClick={testKey} disabled={testing || (!form.api_key && !host?.has_api_key)}
+                  data-testid="test-host-key-button"
+                  className="shrink-0 px-3 py-2 rounded-md border border-border text-sm hover:border-brand hover:text-brand disabled:opacity-50 transition-colors">
+                  {testing ? tr("admin.host.testing") : tr("admin.host.testKey")}
+                </button>
+              </div>
               {host?.has_api_key && <p className="text-xs text-muted-foreground mt-1">{tr("admin.host.apiKeySet")}</p>}
             </div>
           )}

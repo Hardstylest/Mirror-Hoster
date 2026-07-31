@@ -123,6 +123,11 @@ class MirrorInput(BaseModel):
     description: Optional[str] = ""
     links: List[HostLinkInput] = []
 
+class TestKeyInput(BaseModel):
+    api_provider: Optional[str] = None
+    api_key: Optional[str] = None
+    host_id: Optional[str] = None
+
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -351,6 +356,33 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
         logger.warning(f"api_resolve_link {provider} failed: {e}")
     return None
 
+def validate_api_key(provider: Optional[str], key: Optional[str]) -> dict:
+    """Check a hoster API key against the provider's account endpoint. Never returns the key."""
+    if not key:
+        return {"ok": False, "message": "No API key set"}
+    try:
+        if provider == "doodstream":
+            d = _api_json(f"{DOOD_API}/account/info?key={key}")
+            r = d.get("result") or {}
+            if d.get("status") == 200 and r:
+                return {"ok": True, "message": "Valid key", "email": r.get("email"), "balance": r.get("balance")}
+            return {"ok": False, "message": d.get("msg") or "Invalid key"}
+        if provider == "voe":
+            d = _api_json(f"https://voe.sx/api/settings/domain?key={key}")
+            if d.get("status") == 200 or d.get("success"):
+                return {"ok": True, "message": "Valid key", "email": None, "balance": None}
+            return {"ok": False, "message": "Invalid key"}
+        if provider == "firestream":
+            d = _api_json(f"https://firestream.to/api/account/info?key={key}")
+            r = d.get("result") or {}
+            if d.get("status") == 200 and r:
+                return {"ok": True, "message": "Valid key", "email": r.get("email"), "balance": r.get("balance")}
+            return {"ok": False, "message": d.get("msg") or "Invalid key"}
+        return {"ok": False, "message": "No key validation available for this provider"}
+    except Exception as e:
+        return {"ok": False, "message": f"Request failed: {e}"}
+
+
 async def resolve_mirror_links(mirror_id: str):
     """Background/on-demand: use host APIs (or HTTP probe) to set status + resolved playable url."""
     try:
@@ -461,6 +493,19 @@ async def update_host(host_id: str, inp: HostInput, admin: dict = Depends(get_ad
     updated = await db.hosts.find_one({"id": host_id})
     return public_host(updated)
 
+@api_router.post("/hosts/test-key")
+async def test_host_key(inp: TestKeyInput, admin: dict = Depends(get_admin_user)):
+    provider = inp.api_provider
+    key = inp.api_key
+    if not key and inp.host_id:
+        h = await db.hosts.find_one({"id": inp.host_id})
+        if h:
+            provider = provider or h.get("api_provider")
+            key = resolve_api_key(h.get("api_provider"), h.get("api_key"))
+    if not key:
+        key = resolve_api_key(provider, None)
+    return await asyncio.to_thread(validate_api_key, provider, key)
+
 @api_router.delete("/hosts/{host_id}")
 async def delete_host(host_id: str, admin: dict = Depends(get_admin_user)):
     await db.hosts.delete_one({"id": host_id})
@@ -553,6 +598,23 @@ async def check_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 # Public embed endpoint
 # ---------------------------------------------------------------------------
+def _links_stale(links: List[dict], max_age: int) -> bool:
+    now = datetime.now(timezone.utc)
+    for l in links:
+        lc = l.get("last_checked")
+        if not lc:
+            return True
+        try:
+            dt = datetime.fromisoformat(lc)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if (now - dt).total_seconds() > max_age:
+                return True
+        except Exception:
+            return True
+    return False
+
+
 @api_router.get("/embed/{slug}")
 async def get_embed(slug: str, request: Request, country: Optional[str] = Query(None)):
     m = await db.mirrors.find_one({"slug": slug})
@@ -571,8 +633,9 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
     async for h in db.hosts.find({"id": {"$in": host_ids}}):
         hosts[h["id"]] = h
 
-    # Resolve any links that don't yet have a resolved (live) url via host APIs / probe.
-    if any(not l.get("resolved_url") for l in m.get("links", [])):
+    # Re-verify statuses at player start so freshly-offline hosts drop to the back.
+    recheck = int(os.environ.get("EMBED_RECHECK_SECONDS", "900"))
+    if any(not l.get("resolved_url") for l in m.get("links", [])) or _links_stale(m.get("links", []), recheck):
         await resolve_mirror_links(m["id"])
         m = await db.mirrors.find_one({"slug": slug})
 

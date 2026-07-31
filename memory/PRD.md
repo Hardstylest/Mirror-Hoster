@@ -21,11 +21,12 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection with dashboard status badges.
 
 ## Implemented (2026-07-31)
-- **Database-backed hoster API keys**: API keys moved out of `.env` into the `hosts` collection, managed in the Admin Dashboard (masked password field, "leave blank to keep" behavior). `GET /api/hosts` never returns raw keys — only `has_api_key: bool`. `.env` values remain a fallback (`resolve_api_key`). Auto-migrated DoodStream/VOE/FireStream keys on startup.
-- **FireStream integration** (firestream.to): new host + `api_provider="firestream"`, online/offline + title detection via `https://firestream.to/api/file/info`. Verified online (file_code `1uuFmyaj`) and offline (bogus code) resolution end-to-end.
-- **Dynamic hoster management**: Admin can add/edit any hoster (name, domain, provider, api_key, tiers) fully from the dashboard — no server files.
-- **Responsive dashboard**: DashboardLayout now has a mobile top bar + slide-in drawer (fixes horizontal overflow on small screens); desktop unchanged.
-- Verified: 41/41 backend tests, all desktop admin flows (iteration_10).
+- **Auto-Offline-Prüfung im Player**: `GET /api/embed/{slug}` prüft Link-Status beim Player-Start neu, wenn er veraltet ist (`EMBED_RECHECK_SECONDS`, Standard 900s), und sortiert offline gegangene Hoster ans Ende (höchstbezahlter Online-Hoster zuerst).
+- **"Key testen"-Button**: `POST /api/hosts/test-key` (Admin) validiert einen Hoster-API-Key gegen den Account-Endpunkt (Doodstream/FireStream `account/info`, VOE `settings/domain`). Button im Host-Editor testet getippten oder gespeicherten Key; Ergebnis als Toast (inkl. E-Mail/Balance). Key wird nie im Klartext zurückgegeben.
+- **Database-backed hoster API keys**: Keys aus `.env` in `hosts`-Collection, im Admin-Dashboard editierbar (maskiert, "leer lassen = behalten"). `GET /api/hosts` liefert nur `has_api_key`. `.env` bleibt Fallback.
+- **FireStream integriert** (firestream.to): Host + `api_provider="firestream"`, Online/Offline + Titel via `file/info`.
+- **Dynamische Hoster-Verwaltung** und **responsives Dashboard** (mobiler Drawer).
+- Verifiziert: 41/41 Backend-Tests (iteration_10), Key-Test & Embed-Sortierung per curl+Screenshot.
 
 ## Implemented (2026-07-04)
 - JWT email/password auth + admin seeding (admin@mirrorstream.com / Admin@1234).
