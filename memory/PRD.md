@@ -21,10 +21,13 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection with dashboard status badges.
 
 ## Implemented (2026-07-31)
-- **Benutzerverwaltung im Admin-Bereich**: Neue Aktionen im Tab "Benutzer" — Rolle umschalten (`PUT /api/admin/users/{id}/role`, "Zum Admin machen"/"Admin entziehen") und Benutzer löschen (`DELETE /api/admin/users/{id}`, löscht auch dessen Mirrors). Selbstschutz: eigene Rolle/Account kann nicht geändert/gelöscht werden (Buttons deaktiviert + Backend 400).
-- **FireStream Auto-Fix (Session-Login)** + Login-Daten im Admin editierbar.
-- **Bulk-Auto-Fix**, **Offline-Badge im Menü**, **Doodstream Tier-Auto-Update** (alle 3 Hoster täglich).
-- Verifiziert: promote/demote/delete + Selbstschutz per curl, UI per Screenshot.
+- **Admin: Benutzer anlegen**: Button + Modal (`POST /api/admin/users`) legt neue Nutzer inkl. Rolle (user/admin) an; Duplikat-E-Mail → 400. Login danach direkt möglich.
+- **Admin: Passwort zurücksetzen**: Button pro Nutzer (`PUT /api/admin/users/{id}/password`), setzt neues Passwort (min. 6 Zeichen, bcrypt).
+- **Benutzer-Suche**: Filterfeld (Name/E-Mail) in der Benutzerliste (clientseitig).
+- **Reparatur-Verlauf**: `GET /api/fix-logs` + Sektion auf der Offline-Seite; jeder erfolgreiche (auto/bulk) Fix wird in `db.fix_logs` geloggt (Mirror, Hoster, neuer Link, Zeit).
+- **Mobile**: Benutzer-Tabelle horizontal scrollbar, Admin-Tab-Leiste scrollbar; load()-Fehlerbehandlung ergänzt.
+- Benutzerverwaltung (Rolle/Löschen, Selbstschutz) aus vorheriger Runde.
+- Verifiziert: iteration_12 – alle 4 Feature-APIs + Desktop-Flows grün (53/54 Backend; einzige Abweichung: credentialed-CORS Wildcard = bestehende Deploy-Config, App nutzt Bearer-Auth).
 - **"Key testen"-Button**: `POST /api/hosts/test-key` (Admin) validiert einen Hoster-API-Key gegen den Account-Endpunkt (Doodstream/FireStream `account/info`, VOE `settings/domain`). Button im Host-Editor testet getippten oder gespeicherten Key; Ergebnis als Toast (inkl. E-Mail/Balance). Key wird nie im Klartext zurückgegeben.
 - **Database-backed hoster API keys**: Keys aus `.env` in `hosts`-Collection, im Admin-Dashboard editierbar (maskiert, "leer lassen = behalten"). `GET /api/hosts` liefert nur `has_api_key`. `.env` bleibt Fallback.
 - **FireStream integriert** (firestream.to): Host + `api_provider="firestream"`, Online/Offline + Titel via `file/info`.

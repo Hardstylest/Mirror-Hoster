@@ -273,8 +273,10 @@ export default function AdminDashboard() {
   const [userSearch, setUserSearch] = useState("");
 
   const load = useCallback(async () => {
-    const [s, h, u] = await Promise.all([api.get("/admin/stats"), api.get("/hosts"), api.get("/admin/users")]);
-    setStats(s.data); setHosts(h.data); setUsers(u.data);
+    try {
+      const [s, h, u] = await Promise.all([api.get("/admin/stats"), api.get("/hosts"), api.get("/admin/users")]);
+      setStats(s.data); setHosts(h.data); setUsers(u.data);
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -349,10 +351,10 @@ export default function AdminDashboard() {
         <h1 className="font-display font-black text-3xl mb-1">{t("admin.title")}</h1>
         <p className="text-muted-foreground mb-6">{t("admin.subtitle")}</p>
 
-        <div className="flex gap-1 border-b border-border mb-8">
+        <div className="flex gap-1 border-b border-border mb-8 overflow-x-auto whitespace-nowrap">
           {tabs.map((tb) => (
             <button key={tb.id} onClick={() => setTab(tb.id)} data-testid={`admin-tab-${tb.id}`}
-              className={`px-4 py-2.5 text-sm border-b-2 transition-colors ${tab === tb.id ? "border-brand text-brand" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+              className={`shrink-0 px-4 py-2.5 text-sm border-b-2 transition-colors ${tab === tb.id ? "border-brand text-brand" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
               {tb.label}
             </button>
           ))}
@@ -421,8 +423,8 @@ export default function AdminDashboard() {
                 <Plus size={18} /> {t("admin.users.add")}
               </button>
             </div>
-            <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="bg-card border border-border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-surface text-muted-foreground">
                 <tr>
                   <th className="text-left px-5 py-3 font-medium">{t("admin.users.name")}</th>

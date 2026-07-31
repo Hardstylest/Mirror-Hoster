@@ -27,12 +27,14 @@ export default function OfflineStreams() {
   const [logs, setLogs] = useState([]);
 
   const load = useCallback(async () => {
-    const [m, h, fl] = await Promise.all([api.get("/mirrors"), api.get("/hosts"), api.get("/fix-logs")]);
-    setMirrors(m.data);
-    const pm = {};
-    h.data.forEach((x) => { pm[x.id] = { provider: x.api_provider, has_login: x.has_login }; });
-    setHostMap(pm);
-    setLogs(fl.data);
+    try {
+      const [m, h, fl] = await Promise.all([api.get("/mirrors"), api.get("/hosts"), api.get("/fix-logs")]);
+      setMirrors(m.data);
+      const pm = {};
+      h.data.forEach((x) => { pm[x.id] = { provider: x.api_provider, has_login: x.has_login }; });
+      setHostMap(pm);
+      setLogs(fl.data);
+    } catch { /* keep previous state */ }
     setLoading(false);
     window.dispatchEvent(new Event("offline-updated"));
   }, []);
