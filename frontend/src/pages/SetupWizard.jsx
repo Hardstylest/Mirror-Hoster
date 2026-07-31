@@ -10,7 +10,7 @@ export default function SetupWizard() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     site_name: "MirrorStream", tagline: "", description: "", footer_text: "For legal content only.",
-    admin_name: "Administrator", admin_email: "", admin_password: "",
+    admin_name: "Administrator", admin_email: "", admin_password: "", token: "",
   });
 
   useEffect(() => {
@@ -84,6 +84,15 @@ export default function SetupWizard() {
                 value={form.admin_password} onChange={(e) => setForm({ ...form, admin_password: e.target.value })} />
             </div>
           </div>
+
+          {status.token_required && (
+            <div>
+              <p className="text-xs uppercase tracking-[0.15em] text-muted-foreground mb-3">Security</p>
+              <input data-testid="setup-token" type="password" autoComplete="off" className={field} required
+                placeholder="Setup token (from backend/.env)"
+                value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} />
+            </div>
+          )}
 
           <button type="submit" disabled={saving || !status.db_connected} data-testid="setup-submit"
             className="w-full inline-flex items-center justify-center gap-2 bg-brand text-black font-semibold rounded-md py-3 hover:bg-brand-hover disabled:opacity-60 transition-colors">

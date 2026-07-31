@@ -1,0 +1,39 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      MONGO_URL: "mongodb://mongo:27017"
+      DB_NAME: "${DB_NAME:-mirrorstream}"
+      JWT_SECRET: "${JWT_SECRET:?Set JWT_SECRET in .env}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+      SETUP_TOKEN: "${SETUP_TOKEN:-}"
+      CHECK_INTERVAL_HOURS: "${CHECK_INTERVAL_HOURS:-6}"
+      TIER_UPDATE_HOURS: "${TIER_UPDATE_HOURS:-24}"
+      EMBED_RECHECK_SECONDS: "${EMBED_RECHECK_SECONDS:-900}"
+      # Optional: uncomment to skip the /setup wizard and auto-create an admin
+      # ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
+      # ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+    depends_on:
+      - mongo
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Leave empty for same-origin (nginx proxies /api to the backend).
+        REACT_APP_BACKEND_URL: ""
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  mongo_data:

@@ -1130,12 +1130,22 @@ class SetupInput(BaseModel):
     admin_name: str = "Administrator"
     admin_email: EmailStr
     admin_password: str = Field(min_length=6)
+    token: Optional[str] = None
 
 async def _is_installed() -> bool:
     s = await db.settings.find_one({"key": "site"})
     if s and s.get("installed"):
         return True
     return (await db.users.count_documents({"role": "admin"})) > 0
+
+@api_router.get("/health")
+async def health():
+    db_ok = True
+    try:
+        await client.admin.command("ping")
+    except Exception:
+        db_ok = False
+    return {"status": "ok" if db_ok else "degraded", "db": db_ok}
 
 @api_router.get("/setup/status")
 async def setup_status():
@@ -1145,12 +1155,16 @@ async def setup_status():
     except Exception:
         db_connected = False
     return {"installed": await _is_installed(), "db_connected": db_connected,
-            "db_name": os.environ.get("DB_NAME", "")}
+            "db_name": os.environ.get("DB_NAME", ""),
+            "token_required": bool(os.environ.get("SETUP_TOKEN"))}
 
 @api_router.post("/setup/init")
 async def setup_init(inp: SetupInput):
     if await _is_installed():
         raise HTTPException(status_code=403, detail="Setup has already been completed")
+    setup_token = os.environ.get("SETUP_TOKEN")
+    if setup_token and inp.token != setup_token:
+        raise HTTPException(status_code=403, detail="Invalid setup token")
     email = inp.admin_email.lower()
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=400, detail="Email already registered")
