@@ -34,6 +34,10 @@ const translations = {
     "admin.ads.footer": "Footer ad (landing page)",
     "admin.ads.playerTop": "Player ad (above video)",
     "admin.ads.playerBottom": "Player ad (below video)",
+    "admin.ads.preroll": "Pre-roll ad (before stream starts)",
+    "admin.ads.prerollEnable": "Show pre-roll ad before the stream",
+    "admin.ads.prerollSeconds": "Countdown (seconds) before skip is allowed",
+    "admin.ads.prerollHint": "Shown as an overlay after the viewer clicks play, before the stream loads. A \"Skip ad\" button appears once the countdown ends.",
     // landing
     "landing.eyebrow": "Multi-host video mirroring",
     "landing.cta": "Start mirroring",
@@ -213,6 +217,9 @@ const translations = {
     "player.selectOther": "Please select another provider tab above.",
     "player.noSources": "No streaming sources available.",
     "player.clickToPlay": "Click to play",
+    "player.adLabel": "Advertisement",
+    "player.adCountdown": "Stream starts in {s}s",
+    "player.adSkip": "Skip ad & play",
   },
   de: {
     "nav.signin": "Anmelden",
@@ -246,6 +253,10 @@ const translations = {
     "admin.ads.footer": "Footer-Werbung (Startseite)",
     "admin.ads.playerTop": "Player-Werbung (über dem Video)",
     "admin.ads.playerBottom": "Player-Werbung (unter dem Video)",
+    "admin.ads.preroll": "Pre-Roll-Werbung (vor dem Stream)",
+    "admin.ads.prerollEnable": "Pre-Roll-Werbung vor dem Stream anzeigen",
+    "admin.ads.prerollSeconds": "Countdown (Sekunden) bis Überspringen erlaubt ist",
+    "admin.ads.prerollHint": "Wird als Overlay angezeigt, nachdem der Zuschauer auf Play klickt, bevor der Stream lädt. Nach Ablauf des Countdowns erscheint ein „Werbung überspringen\"-Button.",
     "landing.eyebrow": "Multi-Host Video-Mirroring",
     "landing.cta": "Jetzt starten",
     "landing.feature1.title": "Browser-Tab-Player",
@@ -418,6 +429,9 @@ const translations = {
     "player.selectOther": "Bitte wähle oben einen anderen Anbieter-Tab.",
     "player.noSources": "Keine Streaming-Quellen verfügbar.",
     "player.clickToPlay": "Zum Abspielen klicken",
+    "player.adLabel": "Werbung",
+    "player.adCountdown": "Stream startet in {s}s",
+    "player.adSkip": "Werbung überspringen",
   },
 };
 

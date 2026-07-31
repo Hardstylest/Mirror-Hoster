@@ -77,6 +77,13 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Anti-Adblock mit Abstufung**: neues Setting `antiadblock_mode` ("off"/"warn"/"block"). „warn" = schließbare Hinweis-Leiste (Video läuft), „block" = harte Sperre. Erkennung blockt erst nach **2 aufeinanderfolgenden** Treffern (weniger Fehlalarme) + **„Erneut prüfen"-Button** (In-Place, ohne Reload) + „Seite neu laden". Aktuell: `block` (aktiviert per User-Wunsch).
 - proxycheck-Key des Users ist in der DB gespeichert (nicht im Code/Repo).
 
+## Pre-Roll-Werbung im Player (2026-06)
+- **Pre-Roll-Ad**: Neue Werbeanzeige, die *vor* dem Stream startet. Nach Klick auf „Play" erscheint ein Overlay im Player mit dem HTML/Script-Werbecode (`ad_preroll`), einem Countdown („Stream startet in Xs", `ad_preroll_seconds`, Standard 8, 0-60) und nach Ablauf einem „Werbung überspringen"-Button → dann lädt der Stream-iframe. Master-Toggle `ad_preroll_enabled`. Standard: AUS/leer.
+- Admin → Tab „Werbung": neuer Bereich mit Aktivierungs-Schalter, Code-Feld (HTML/JS wie andere Ad-Slots) und Countdown-Sekunden-Feld.
+- Backend: `SettingsInput` + `DEFAULT_SETTINGS` + `PUBLIC_SETTINGS_KEYS` um `ad_preroll`/`ad_preroll_enabled`/`ad_preroll_seconds` erweitert (öffentlich, da für Player nötig, kein Secret).
+- Frontend: `VideoPlayer.jsx` mit Pre-Roll-Overlay (nutzt `AdSlot` zur Skript-Ausführung), `EmbedPlayer.jsx` reicht `preroll`-Props durch, i18n `player.adLabel/adCountdown/adSkip` + `admin.ads.preroll*`.
+- Verifiziert (curl + Screenshot): PUT/GET Settings ok, Public-Endpoint liefert Keys, End-to-End im Player: Play → Werbung + Countdown → Skip-Button → Stream lädt. Test-Config danach zurückgesetzt.
+
 ## NOCH OFFEN (nächster Schritt)
 - (leer)
 

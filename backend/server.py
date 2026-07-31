@@ -1492,6 +1492,9 @@ class SettingsInput(BaseModel):
     ad_footer: str = ""
     ad_player_top: str = ""
     ad_player_bottom: str = ""
+    ad_preroll: str = ""
+    ad_preroll_enabled: bool = False
+    ad_preroll_seconds: int = 8
     turnstile_enabled: bool = False
     turnstile_site_key: str = ""
     turnstile_secret_key: str = ""  # blank on save = keep existing secret
@@ -1513,6 +1516,7 @@ class SettingsInput(BaseModel):
 PUBLIC_SETTINGS_KEYS = {
     "site_name", "tagline", "description", "footer_text",
     "ad_header", "ad_footer", "ad_player_top", "ad_player_bottom",
+    "ad_preroll", "ad_preroll_enabled", "ad_preroll_seconds",
     "turnstile_enabled", "turnstile_site_key", "turnstile_login", "turnstile_register", "turnstile_gate",
     "antiadblock_enabled", "antiadblock_mode",
 }
@@ -1702,6 +1706,9 @@ DEFAULT_SETTINGS = {
     "ad_footer": "",
     "ad_player_top": "",
     "ad_player_bottom": "",
+    "ad_preroll": "",
+    "ad_preroll_enabled": False,
+    "ad_preroll_seconds": 8,
     "turnstile_enabled": False,
     "turnstile_site_key": "",
     "turnstile_login": True,

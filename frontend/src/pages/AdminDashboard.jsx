@@ -377,6 +377,9 @@ export default function AdminDashboard() {
     description: cfg.description || "", footer_text: cfg.footer_text || "",
     ad_header: cfg.ad_header || "", ad_footer: cfg.ad_footer || "",
     ad_player_top: cfg.ad_player_top || "", ad_player_bottom: cfg.ad_player_bottom || "",
+    ad_preroll: cfg.ad_preroll || "",
+    ad_preroll_enabled: !!cfg.ad_preroll_enabled,
+    ad_preroll_seconds: cfg.ad_preroll_seconds ?? 8,
     turnstile_enabled: !!cfg.turnstile_enabled,
     turnstile_site_key: cfg.turnstile_site_key || "",
     turnstile_secret_key: "",
@@ -656,6 +659,29 @@ export default function AdminDashboard() {
                   className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
               </div>
             ))}
+            <div className="pt-2 border-t border-border space-y-4" data-testid="preroll-settings">
+              <label className="flex items-center gap-3 cursor-pointer" data-testid="ad-preroll-enabled-toggle">
+                <input type="checkbox" checked={siteForm.ad_preroll_enabled}
+                  onChange={(e) => setSiteForm({ ...siteForm, ad_preroll_enabled: e.target.checked })}
+                  className="w-4 h-4 accent-brand" />
+                <span className="text-sm font-medium">{t("admin.ads.prerollEnable")}</span>
+              </label>
+              <p className="text-xs text-muted-foreground -mt-1">{t("admin.ads.prerollHint")}</p>
+              <div>
+                <label className="text-sm text-muted-foreground">{t("admin.ads.preroll")}</label>
+                <textarea data-testid="setting-ad_preroll" rows={3} value={siteForm.ad_preroll}
+                  onChange={(e) => setSiteForm({ ...siteForm, ad_preroll: e.target.value })}
+                  placeholder="<script>…</script> / <ins>…</ins>"
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              </div>
+              <div>
+                <label className="text-sm text-muted-foreground">{t("admin.ads.prerollSeconds")}</label>
+                <input type="number" min={0} max={60} data-testid="setting-ad_preroll_seconds"
+                  value={siteForm.ad_preroll_seconds}
+                  onChange={(e) => setSiteForm({ ...siteForm, ad_preroll_seconds: Math.max(0, Math.min(60, parseInt(e.target.value, 10) || 0)) })}
+                  className="mt-1 w-32 bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              </div>
+            </div>
             <button onClick={saveSite} disabled={savingSite} data-testid="save-ads-button"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
               <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}

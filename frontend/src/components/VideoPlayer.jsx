@@ -1,17 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { faviconUrl } from "../lib/api";
 import { useI18n } from "../context/I18nContext";
-import { Wifi, WifiOff, Play } from "lucide-react";
+import { AdSlot } from "./AdSlot";
+import { Wifi, WifiOff, Play, SkipForward } from "lucide-react";
 
-export const VideoPlayer = ({ hosts, onHostView, poster }) => {
+export const VideoPlayer = ({ hosts, onHostView, poster, preroll }) => {
   const { t } = useI18n();
   const [active, setActive] = useState(0);
   const [started, setStarted] = useState(false);
+  const [prerollActive, setPrerollActive] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const timerRef = useRef(null);
+
+  const prerollEnabled = !!(preroll?.enabled && preroll?.html);
+  const prerollSeconds = Math.max(0, parseInt(preroll?.seconds, 10) || 0);
 
   useEffect(() => {
     setActive(0);
     setStarted(false);
+    setPrerollActive(false);
+    clearInterval(timerRef.current);
   }, [hosts]);
+
+  useEffect(() => () => clearInterval(timerRef.current), []);
 
   if (!hosts || hosts.length === 0) {
     return (
@@ -28,9 +39,27 @@ export const VideoPlayer = ({ hosts, onHostView, poster }) => {
     if (started && onHostView && hosts[i]) onHostView(hosts[i].host_id);
   };
 
-  const play = () => {
+  const startStream = () => {
+    clearInterval(timerRef.current);
+    setPrerollActive(false);
     setStarted(true);
     if (onHostView && current) onHostView(current.host_id);
+  };
+
+  const play = () => {
+    if (prerollEnabled) {
+      setPrerollActive(true);
+      setCountdown(prerollSeconds);
+      clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        setCountdown((c) => {
+          if (c <= 1) { clearInterval(timerRef.current); return 0; }
+          return c - 1;
+        });
+      }, 1000);
+    } else {
+      startStream();
+    }
   };
 
   return (
@@ -90,6 +119,28 @@ export const VideoPlayer = ({ hosts, onHostView, poster }) => {
             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
             referrerPolicy="no-referrer"
           />
+        ) : prerollActive ? (
+          /* Pre-roll ad overlay: shown after click, before the stream iframe loads */
+          <div className="absolute inset-0 bg-black flex items-center justify-center p-2" data-testid="preroll-overlay">
+            <span className="absolute top-2 left-3 z-10 text-[11px] uppercase tracking-wider text-zinc-400 font-mono pointer-events-none">
+              {t("player.adLabel")}
+            </span>
+            <div className="max-w-full max-h-full overflow-auto flex items-center justify-center">
+              <AdSlot html={preroll.html} testid="preroll-ad" className="flex items-center justify-center" />
+            </div>
+            <div className="absolute bottom-3 right-3 z-10">
+              {countdown > 0 ? (
+                <span data-testid="preroll-countdown" className="px-3 py-1.5 rounded-md bg-black/70 text-zinc-300 text-sm font-mono border border-white/10">
+                  {t("player.adCountdown").replace("{s}", countdown)}
+                </span>
+              ) : (
+                <button onClick={startStream} data-testid="preroll-skip"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors shadow-2xl">
+                  <SkipForward size={16} /> {t("player.adSkip")}
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           /* Click-to-play poster: the host iframe (and its ads/pop-ups) only loads on click */
           <button
