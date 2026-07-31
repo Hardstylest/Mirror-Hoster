@@ -26,6 +26,7 @@ import jwt
 import bcrypt
 import requests
 import re
+import html as html_lib
 import socket
 import ipaddress
 from urllib.parse import urlparse
@@ -1197,19 +1198,25 @@ LM_MAX_EMBEDS = 400
 
 def _lm_get(url: str):
     try:
-        r = requests.get(url, headers={"User-Agent": LM_UA}, timeout=25)
+        r = requests.get(url, headers={"User-Agent": LM_UA}, timeout=15)
         if r.status_code == 200:
+            # Force correct decoding: requests falls back to ISO-8859-1 when the server
+            # omits a charset, which mangles UTF-8 titles (umlauts äöü etc.).
+            ctype = r.headers.get("Content-Type", "").lower()
+            if "charset=" not in ctype:
+                r.encoding = r.apparent_encoding or "utf-8"
             return r.text
     except Exception:
         pass
     return None
 
-def _lm_parse_embed(html: str):
-    title_m = re.search(r"<title>(.*?)</title>", html or "", re.S)
+def _lm_parse_embed(html_text: str):
+    title_m = re.search(r"<title>(.*?)</title>", html_text or "", re.S)
     title = title_m.group(1).strip() if title_m else ""
     title = re.sub(r"\s*[\u2013\-]\s*ListMirror\s*$", "", title).strip()
-    opts = re.findall(r'mirror-opt"[^>]*data-url="([^"]+)"[^>]*>\s*([^<]+?)\s*</a>', html or "")
-    mirrors = [(u.strip(), l.strip()) for (u, l) in opts if u.strip()]
+    title = html_lib.unescape(title)
+    opts = re.findall(r'mirror-opt"[^>]*data-url="([^"]+)"[^>]*>\s*([^<]+?)\s*</a>', html_text or "")
+    mirrors = [(html_lib.unescape(u.strip()), html_lib.unescape(l.strip())) for (u, l) in opts if u.strip()]
     return title, mirrors
 
 def _lm_playlist_embed_ids(slug: str):

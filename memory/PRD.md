@@ -116,6 +116,12 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Root Cause 2 (FireStream)**: `encoding_status:"pending"` (bei importierten Fremd-Dateien normal) führte trotz `status:200` (Datei existiert & spielbar) zu „offline".
 - **Fix** (`api_resolve_link`): (a) Envelope-Guard für alle Provider — wenn `info.status != 200` (rate-limited/ambig) → `return None` → Fallback auf `probe_url` (das 403/429 korrekt als „unknown"→online behandelt), niemals fälschlich offline. (b) Online-Bedingung gelockert auf „Datei existiert (`file status==200`)" für VOE/FireStream/Playmate/VidNest (encoding/canplay-Zwang entfernt), da spielbare Fremd-Dateien sonst falsch-offline waren.
 - Verifiziert: Alle 20 importierten Mirrors neu geprüft → 60 Links online, 0 offline.
+
+## Bugfix: Umlaute & Sonderzeichen im Import-Titel (2026-06)
+- **Symptom**: Titel wie `Brian&#039;s Boys`, `Leo &amp; Lance`, Umlaute äöü fehlerhaft.
+- **Root Cause**: `_lm_parse_embed` übernahm den `<title>` roh ohne HTML-Entity-Dekodierung; zudem konnte `requests` bei fehlendem Charset-Header auf ISO-8859-1 zurückfallen (Umlaut-Mojibake).
+- **Fix**: `html.unescape()` auf Titel + Mirror-Labels (numerische `&#039;` und benannte `&amp;/&uuml;/&szlig;`), `_lm_get` erzwingt UTF-8 (`apparent_encoding`) wenn kein Charset im Header, Timeout 25s→15s. Bestehende DB-Titel nachträglich dekodiert; Re-Import aktualisiert sie ebenfalls.
+- Verifiziert: Parse → „Brian's Boys" / „Leo & Lance" / „Grüße aus München & Köln"; DB-Titel korrekt.
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
 - P2: Email verification + password reset UI; referral/earnings estimate per mirror.
