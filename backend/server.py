@@ -411,6 +411,7 @@ NAME_TO_ISO = {
     "slovakia": "SK", "argentina": "AR", "colombia": "CO", "peru": "PE", "egypt": "EG",
     "pakistan": "PK", "philippines": "PH", "ukraine": "UA", "israel": "IL", "china": "CN",
     "slovenia": "SI", "lithuania": "LT", "latvia": "LV", "estonia": "EE", "luxembourg": "LU",
+    "russian federation": "RU", "russia": "RU", "slovak republic": "SK", "czech republic": "CZ",
 }
 
 def _name_to_iso(name: str):
@@ -474,7 +475,35 @@ def scrape_firestream_tiers():
             default_rate = float(rate)
     return tiers, default_rate
 
-TIER_SCRAPERS = {"voe": scrape_voe_tiers, "firestream": scrape_firestream_tiers}
+def scrape_doodstream_tiers():
+    """Parse https://doodstream.co/earn-money. Tiers 1-4 live in JS vars; Tier 5 + default in text."""
+    html = requests.get("https://doodstream.co/earn-money", timeout=15, headers=_SCRAPE_HEADERS).text
+    countries = dict(re.findall(r'data_countries(\d+)="([^"]*)"', html))
+    amounts = dict(re.findall(r'data_amount(\d+)="([^"]*)"', html))
+    tiers, default_rate = [], None
+    for n in sorted(countries.keys(), key=lambda x: int(x)):
+        names = [c.strip() for c in countries[n].split(",") if c.strip()]
+        codes = [c for c in (_name_to_iso(x) for x in names) if c]
+        rate_raw = (amounts.get(n, "0").split(",")[0] or "0")
+        try:
+            rate = float(rate_raw)
+        except ValueError:
+            rate = 0.0
+        if codes and rate:
+            tiers.append({"name": f"Tier {len(tiers)+1}", "rate": rate, "countries": codes})
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+    m5 = re.search(r"Tier 5\s+([A-Za-z ]+?)\s*\$\s*([\d.]+)", text)
+    if m5:
+        iso = _name_to_iso(m5.group(1))
+        if iso:
+            tiers.append({"name": f"Tier {len(tiers)+1}", "rate": float(m5.group(2)), "countries": [iso]})
+    md = re.search(r"All Others.{0,40}?\$\s*([\d.]+)", text)
+    if md:
+        default_rate = float(md.group(1))
+    return tiers, default_rate
+
+TIER_SCRAPERS = {"voe": scrape_voe_tiers, "firestream": scrape_firestream_tiers,
+                 "doodstream": scrape_doodstream_tiers}
 
 async def refresh_host_tiers(host: dict) -> dict:
     prov = host.get("api_provider")
@@ -526,25 +555,28 @@ def find_replacement(provider: str, key: str, title: str):
             term = _dood_search_term(title)
             d = _api_json(f"{DOOD_API}/search/videos?key={key}&search_term={requests.utils.quote(term)}")
             results = d.get("result") or []
-            exact = [r for r in results if _norm_title(r.get("title", "")) == target]
-            online = [r for r in exact if str(r.get("canplay")) in ("1", "True", "true")]
-            matches = online or exact
-            if not matches:
+            online = [r for r in results if _norm_title(r.get("title", "")) == target
+                      and str(r.get("canplay")) in ("1", "True", "true")]
+            if not online:
                 return None
-            matches.sort(key=lambda r: r.get("uploaded", ""), reverse=True)
-            code = matches[0].get("file_code")
+            online.sort(key=lambda r: r.get("uploaded", ""), reverse=True)
+            code = online[0].get("file_code")
             return {"url": f"https://doodstream.com/e/{code}",
-                    "title": matches[0].get("title"), "code": code}
+                    "title": online[0].get("title"), "code": code}
         if provider == "voe":
             d = _api_json(f"https://voe.sx/api/file/list?key={key}&per_page=250")
             data = ((d.get("result") or {}).get("data")) or []
             matches = [r for r in data if _norm_title(r.get("title") or r.get("name", "")) == target]
-            if not matches:
-                return None
             matches.sort(key=lambda r: r.get("uploaded", ""), reverse=True)
-            code = matches[0].get("filecode") or matches[0].get("file_code")
             prefix = voe_embed_prefix(key) or "https://voe.sx/e/"
-            return {"url": f"{prefix}{code}", "title": matches[0].get("title"), "code": code}
+            for r in matches:
+                code = r.get("filecode") or r.get("file_code")
+                # Confirm the candidate is actually online before using it.
+                info = api_resolve_link("voe", f"{prefix}{code}", key)
+                if info and info.get("status") == "online":
+                    return {"url": info.get("url") or f"{prefix}{code}",
+                            "title": r.get("title"), "code": code}
+            return None
     except Exception as e:
         logger.warning(f"find_replacement {provider} failed: {e}")
     return None
@@ -936,17 +968,23 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
     mirrors = await db.mirrors.find(query).to_list(2000)
     total_views = sum(m.get("views", 0) for m in mirrors)
     online = offline = pending = 0
+    offline_mirrors = 0
     for m in mirrors:
+        has_offline = False
         for l in m.get("links", []):
             s = l.get("status", "pending")
             if s == "online":
                 online += 1
             elif s == "offline":
                 offline += 1
+                has_offline = True
             else:
                 pending += 1
+        if has_offline:
+            offline_mirrors += 1
     return {"total_mirrors": len(mirrors), "total_views": total_views,
-            "links_online": online, "links_offline": offline, "links_pending": pending}
+            "links_online": online, "links_offline": offline, "links_pending": pending,
+            "offline_mirrors": offline_mirrors}
 
 @api_router.get("/admin/stats")
 async def admin_stats(admin: dict = Depends(get_admin_user)):

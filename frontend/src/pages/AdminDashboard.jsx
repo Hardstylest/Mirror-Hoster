@@ -207,8 +207,10 @@ export default function AdminDashboard() {
     setRefreshingTiers(true);
     try {
       const { data } = await api.post("/admin/hosts/refresh-tiers", {});
-      const ok = (data.results || []).filter((r) => r.ok).length;
-      toast.success(`${ok} ${t("admin.host.tiersRefreshed")}`);
+      const results = data.results || [];
+      const ok = results.filter((r) => r.ok).length;
+      if (ok === 0) toast.error(results[0]?.message || t("offline.autofixNone"));
+      else toast.success(`${ok} ${t("admin.host.tiersRefreshed")}`);
       await load();
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
     setRefreshingTiers(false);

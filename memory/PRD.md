@@ -21,10 +21,11 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Offline detection with dashboard status badges.
 
 ## Implemented (2026-07-31)
-- **Offline-Link-Markierung im Mirror-Editor**: Beim Bearbeiten werden offline Hoster mit rotem "Offline"-Badge, rotem Feldrahmen und Hinweis markiert, damit der Link schnell ersetzt werden kann.
-- **FireStream Verdienst-Tiers**: offizielle CPM-Tiers eingetragen (Tier1 $40 AU/DE/US/GB, Tier2 $25, Tier3 $15, Tier4 $10, Rest $5). Backfill für bestehenden DB-Eintrag (nur wenn leer, Admin-Edits bleiben erhalten). Sichtbar unter Admin › Anbieter & Sätze.
-- **Offline-Streams-Übersichtsseite** (`/dashboard/offline`, neuer Nav-Punkt): listet Mirrors mit offline Hostern; Aktionen einzeln/alle neu prüfen, Player öffnen, bearbeiten.
-- **Auto-Offline-Prüfung im Player**: `GET /api/embed/{slug}` re-checkt veraltete Status (`EMBED_RECHECK_SECONDS`, Std. 900s) und sortiert offline ans Ende.
+- **Tier-Auto-Update**: Täglicher Job + Admin-Button "Tiers jetzt aktualisieren" (`POST /api/admin/hosts/refresh-tiers`) liest Earn-Seiten aus und aktualisiert Tiers/default_rate + `tiers_updated_at`. VOE (server-gerendert `voe.sx/earn-money`, Ländernamen→ISO) und FireStream (Tiers im SPA-JS-Bundle) unterstützt; Doodstream ohne öffentliche Quelle → manuell. Anzeige "Auto-Update: <Datum>" pro Host.
+- **Auto-Fix Offline-Links**: Button je Offline-Link auf `/dashboard/offline` (`POST /api/mirrors/{id}/autofix/{host_id}`) sucht via Hoster-API die neueste ONLINE-Datei mit gleichem Dateinamen/Titel und ersetzt den Embed. Doodstream (`search/videos`) + VOE (`file/list`, Online per file/info verifiziert); FireStream nicht unterstützt (Button deaktiviert). Strikte Online-Prüfung: kein Match → ok:false (kein falsches "online").
+- **Offline-Link-Markierung im Mirror-Editor** + **FireStream Verdienst-Tiers** (s. vorher).
+- **Offline-Streams-Übersichtsseite** + **Auto-Offline-Prüfung im Player**.
+- Verifiziert: 45/45 Backend-Tests + Frontend-Flows (iteration_11); Online-Enforcement per curl nachgetestet.
 - **"Key testen"-Button**: `POST /api/hosts/test-key` (Admin) validiert einen Hoster-API-Key gegen den Account-Endpunkt (Doodstream/FireStream `account/info`, VOE `settings/domain`). Button im Host-Editor testet getippten oder gespeicherten Key; Ergebnis als Toast (inkl. E-Mail/Balance). Key wird nie im Klartext zurückgegeben.
 - **Database-backed hoster API keys**: Keys aus `.env` in `hosts`-Collection, im Admin-Dashboard editierbar (maskiert, "leer lassen = behalten"). `GET /api/hosts` liefert nur `has_api_key`. `.env` bleibt Fallback.
 - **FireStream integriert** (firestream.to): Host + `api_provider="firestream"`, Online/Offline + Titel via `file/info`.
