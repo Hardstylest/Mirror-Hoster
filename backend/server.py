@@ -1931,12 +1931,23 @@ async def build_backup_zip() -> bytes:
 
 async def restore_backup_zip(data: bytes) -> dict:
     restored = {}
+
+    def _safe_join(base, rel):
+        # Zip-Slip guard: reject entries that escape the base directory.
+        base_n = os.path.normpath(base)
+        dest = os.path.normpath(os.path.join(base_n, rel))
+        if dest != base_n and not dest.startswith(base_n + os.sep):
+            return None
+        return dest
+
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         if "manifest.json" not in z.namelist():
             raise HTTPException(status_code=400, detail="Invalid backup file (no manifest.json)")
         for n in z.namelist():
             if n.startswith("db/") and n.endswith(".json"):
                 coll = n[3:-5]
+                if not coll or "/" in coll or coll.startswith("system."):
+                    continue
                 docs = json.loads(z.read(n) or b"[]")
                 for d in docs:
                     _id = d.get("_id")
@@ -1947,14 +1958,18 @@ async def restore_backup_zip(data: bytes) -> dict:
                     await db[coll].insert_many(docs)
                 restored[coll] = len(docs)
             elif n.startswith("files/") and not n.endswith("/"):
-                dest = os.path.join(BACKUP_DATA_DIR, n[len("files/"):])
+                dest = _safe_join(BACKUP_DATA_DIR, n[len("files/"):])
+                if not dest:
+                    continue
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with open(dest, "wb") as f:
                     f.write(z.read(n))
             elif n.startswith("config/") and not n.endswith("/"):
                 # Never overwrite the LIVE .env (would break the running server). Extract the
                 # backed-up config to a review folder so the admin can apply it manually.
-                dest = os.path.join(BACKUP_DATA_DIR, "restored-config", n[len("config/"):])
+                dest = _safe_join(os.path.join(BACKUP_DATA_DIR, "restored-config"), n[len("config/"):])
+                if not dest:
+                    continue
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with open(dest, "wb") as f:
                     f.write(z.read(n))
