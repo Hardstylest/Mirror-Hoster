@@ -18,6 +18,7 @@ import uuid
 import asyncio
 import secrets
 import time
+import random
 import json
 import io
 import zipfile
@@ -145,6 +146,14 @@ class MirrorInput(BaseModel):
 class MirrorImportInput(BaseModel):
     text: str
     auto_create_hosts: bool = True
+
+class BulkDeleteInput(BaseModel):
+    ids: List[str]
+
+class CleanupInput(BaseModel):
+    host_id: Optional[str] = None
+    offline_only: bool = True
+    preview: bool = True
 
 class TestKeyInput(BaseModel):
     api_provider: Optional[str] = None
@@ -974,6 +983,8 @@ def find_replacement(provider: str, key: str, title: str, host: Optional[dict] =
     return None
 
 
+RESOLVE_SEM = asyncio.Semaphore(3)
+
 async def resolve_mirror_links(mirror_id: str):
     """Background/on-demand: use host APIs (or HTTP probe) to set status + resolved playable url."""
     try:
@@ -987,22 +998,31 @@ async def resolve_mirror_links(mirror_id: str):
             providers[h["id"]] = (h.get("api_provider"), resolve_api_key(h.get("api_provider"), h.get("api_key")), h.get("login_email"))
         for l in links:
             prov, key, login = providers.get(l["host_id"], (None, None, None))
-            api = await asyncio.to_thread(api_resolve_link, prov, l["embed_url"], key, login) if prov else None
-            if api:
-                l["status"] = api["status"]
-                l["resolved_url"] = api["url"]
-                if api.get("title"):
-                    l["title"] = api["title"]
-                if api.get("thumbnail"):
-                    l["thumbnail"] = api["thumbnail"]
-            else:
-                result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
-                l["status"] = "online" if result == "unknown" else result
-                l["resolved_url"] = final_url
+            # Global throttle so bulk imports don't hammer provider APIs (rate limits).
+            async with RESOLVE_SEM:
+                api = await asyncio.to_thread(api_resolve_link, prov, l["embed_url"], key, login) if prov else None
+                if api:
+                    l["status"] = api["status"]
+                    l["resolved_url"] = api["url"]
+                    if api.get("title"):
+                        l["title"] = api["title"]
+                    if api.get("thumbnail"):
+                        l["thumbnail"] = api["thumbnail"]
+                else:
+                    result, final_url = await asyncio.to_thread(probe_url, l["embed_url"])
+                    l["status"] = "online" if result == "unknown" else result
+                    l["resolved_url"] = final_url
             l["last_checked"] = now_iso()
         await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": links}})
     except Exception as e:
         logger.warning(f"resolve_mirror_links failed for {mirror_id}: {e}")
+
+
+async def resolve_many(mirror_ids: list):
+    """Resolve a batch sequentially (gentle) — used after bulk import."""
+    for mid in mirror_ids:
+        await resolve_mirror_links(mid)
+        await asyncio.sleep(0.25)
 
 
 # ---------------------------------------------------------------------------
@@ -1273,6 +1293,7 @@ def _lm_scrape(text: str):
     embeds = list(dict.fromkeys(embeds))[:LM_MAX_EMBEDS]
 
     def fetch_one(slug):
+        time.sleep(random.uniform(0.15, 0.4))  # gentle pacing to avoid host throttling
         html = _lm_get(f"{LM_BASE}/embed/{slug}")
         if not html:
             return (slug, None)
@@ -1281,7 +1302,7 @@ def _lm_scrape(text: str):
 
     results, failed = [], []
     if embeds:
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=4) as ex:
             for slug, data in ex.map(fetch_one, embeds):
                 if data and data["mirrors"]:
                     results.append(data)
@@ -1311,7 +1332,7 @@ async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_curren
         return None
 
     imported, updated, skipped_existing = 0, 0, 0
-    created_hosts, skipped_hosts = [], {}
+    created_hosts, skipped_hosts, resolve_ids = [], {}, []
     for emb in scraped["results"]:
         source_ref = f"listmirror:{emb['slug']}"
         existing = await db.mirrors.find_one({"created_by": user["id"], "source_ref": source_ref})
@@ -1360,7 +1381,7 @@ async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_curren
                 l["resolved_url"] = p.get("resolved_url") if unchanged else None
             await db.mirrors.update_one({"id": existing["id"]},
                                         {"$set": {"title": emb["title"], "links": enriched}})
-            asyncio.create_task(resolve_mirror_links(existing["id"]))
+            resolve_ids.append(existing["id"])
             updated += 1
             continue
         for l in enriched:
@@ -1438,6 +1459,66 @@ async def delete_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
     await db.mirrors.delete_one({"id": mirror_id})
     await db.views.delete_many({"mirror_id": mirror_id})
     return {"message": "Mirror deleted"}
+
+@api_router.post("/mirrors/bulk-delete")
+async def bulk_delete_mirrors(inp: BulkDeleteInput, user: dict = Depends(get_current_user)):
+    if not inp.ids:
+        return {"deleted": 0}
+    q = {"id": {"$in": inp.ids}}
+    if user.get("role") != "admin":
+        q["created_by"] = user["id"]
+    res = await db.mirrors.delete_many(q)
+    await db.views.delete_many({"mirror_id": {"$in": inp.ids}})
+    return {"deleted": res.deleted_count}
+
+@api_router.post("/admin/mirrors/cleanup")
+async def cleanup_mirrors(inp: CleanupInput, admin: dict = Depends(get_admin_user)):
+    """Remove a host's links (optionally only offline ones) from all mirrors. Mirrors left
+    with zero links are deleted. With preview=true, only returns the impact counts."""
+    if not inp.host_id and not inp.offline_only:
+        raise HTTPException(status_code=400, detail="Select a host or enable offline-only (removing all links of all hosts would delete everything).")
+
+    def link_matches(l):
+        if inp.host_id and l.get("host_id") != inp.host_id:
+            return False
+        if inp.offline_only and l.get("status") != "offline":
+            return False
+        return True
+
+    q = {}
+    if inp.host_id:
+        q["links.host_id"] = inp.host_id
+    if inp.offline_only:
+        q["links.status"] = "offline"
+
+    affected = links_removed = mirrors_deleted = mirrors_updated = 0
+    ops = []
+    async for m in db.mirrors.find(q):
+        orig = m.get("links", [])
+        keep = [l for l in orig if not link_matches(l)]
+        removed = len(orig) - len(keep)
+        if removed == 0:
+            continue
+        affected += 1
+        links_removed += removed
+        if not keep:
+            mirrors_deleted += 1
+            ops.append(("delete", m["id"]))
+        else:
+            mirrors_updated += 1
+            ops.append(("update", m["id"], keep))
+
+    result = {"preview": inp.preview, "affected_mirrors": affected, "links_removed": links_removed,
+              "mirrors_deleted": mirrors_deleted, "mirrors_updated": mirrors_updated}
+    if inp.preview:
+        return result
+    for op in ops:
+        if op[0] == "delete":
+            await db.mirrors.delete_one({"id": op[1]})
+            await db.views.delete_many({"mirror_id": op[1]})
+        else:
+            await db.mirrors.update_one({"id": op[1]}, {"$set": {"links": op[2]}})
+    return result
 
 @api_router.post("/mirrors/{mirror_id}/check")
 async def check_mirror(mirror_id: str, user: dict = Depends(get_current_user)):

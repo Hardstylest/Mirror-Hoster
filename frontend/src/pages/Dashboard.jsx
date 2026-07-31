@@ -157,6 +157,8 @@ export default function Dashboard() {
   const [page, setPage] = useState(1);
   const [embedFor, setEmbedFor] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const load = useCallback(async () => {
     const [m, s] = await Promise.all([api.get("/mirrors"), api.get("/stats/dashboard")]);
@@ -198,6 +200,27 @@ export default function Dashboard() {
   const currentPage = Math.min(page, totalPages);
   const paged = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   useEffect(() => { setPage(1); }, [search, pageSize]);
+
+  const toggleSelect = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allSelected = paged.length > 0 && paged.every((m) => selected.has(m.id));
+  const toggleSelectAll = () => setSelected((s) => {
+    const n = new Set(s);
+    if (allSelected) paged.forEach((m) => n.delete(m.id));
+    else paged.forEach((m) => n.add(m.id));
+    return n;
+  });
+  const bulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!window.confirm(t("dash.bulkDeleteConfirm").replace("{n}", selected.size))) return;
+    setBulkDeleting(true);
+    try {
+      const { data } = await api.post("/mirrors/bulk-delete", { ids: Array.from(selected) });
+      toast.success(t("dash.bulkDeleted").replace("{n}", data.deleted));
+      setSelected(new Set());
+      await load();
+    } catch { toast.error(t("dash.checkFailed")); }
+    setBulkDeleting(false);
+  };
 
   return (
     <DashboardLayout>
@@ -262,12 +285,25 @@ export default function Dashboard() {
 
             {paged.length === 0 ? (
               <div className="bg-card border border-border rounded-lg p-10 text-center text-muted-foreground" data-testid="no-results">{t("dash.noResults")}</div>
-            ) : (
+            ) : (<>
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap" data-testid="bulk-bar">
+              <label className="inline-flex items-center gap-2 text-sm text-muted-foreground cursor-pointer" data-testid="select-all-toggle">
+                <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} className="w-4 h-4 accent-brand" />
+                {allSelected ? t("dash.deselectAll") : t("dash.selectAll")}
+              </label>
+              {selected.size > 0 && (
+                <button onClick={bulkDelete} disabled={bulkDeleting} data-testid="bulk-delete-button"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-offline text-white font-semibold hover:opacity-90 disabled:opacity-60 transition-opacity">
+                  <Trash2 size={16} /> {t("dash.bulkDelete").replace("{n}", selected.size)}
+                </button>
+              )}
+            </div>
             <div className="space-y-4" data-testid="mirror-list">
               {paged.map((m) => (
-              <div key={m.id} className="bg-card border border-border rounded-lg p-5 hover:border-brand/30 transition-colors">
+              <div key={m.id} className={`bg-card border rounded-lg p-5 transition-colors ${selected.has(m.id) ? "border-brand" : "border-border hover:border-brand/30"}`}>
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex items-start gap-4 min-w-0">
+                    <input type="checkbox" checked={selected.has(m.id)} onChange={() => toggleSelect(m.id)} data-testid={`select-${m.id}`} className="mt-1 w-4 h-4 accent-brand shrink-0" />
                     {(() => { const thumb = m.links.find((l) => l.thumbnail)?.thumbnail; return thumb ? (
                       <img src={thumb} alt="" className="w-28 h-16 rounded-md object-cover border border-border shrink-0" onError={(e) => (e.currentTarget.style.display = "none")} />
                     ) : (
@@ -301,7 +337,7 @@ export default function Dashboard() {
               </div>
             ))}
             </div>
-            )}
+            </>)}
 
             {totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 mt-6" data-testid="pagination">

@@ -122,6 +122,12 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Root Cause**: `_lm_parse_embed` übernahm den `<title>` roh ohne HTML-Entity-Dekodierung; zudem konnte `requests` bei fehlendem Charset-Header auf ISO-8859-1 zurückfallen (Umlaut-Mojibake).
 - **Fix**: `html.unescape()` auf Titel + Mirror-Labels (numerische `&#039;` und benannte `&amp;/&uuml;/&szlig;`), `_lm_get` erzwingt UTF-8 (`apparent_encoding`) wenn kein Charset im Header, Timeout 25s→15s. Bestehende DB-Titel nachträglich dekodiert; Re-Import aktualisiert sie ebenfalls.
 - Verifiziert: Parse → „Brian's Boys" / „Leo & Lance" / „Grüße aus München & Köln"; DB-Titel korrekt.
+
+## Gedrosselter Import + Bulk-Löschen + Mirror-Bereinigung (2026-06)
+- **Gedrosselter Import**: Globales `RESOLVE_SEM = asyncio.Semaphore(3)` begrenzt gleichzeitige Provider-Statusprüfungen; Import-Resolves laufen als EIN Hintergrund-Batch (`resolve_many`, 0,25s Pause) statt N gleichzeitiger Tasks. Scraper `ThreadPoolExecutor` 10→4 + Jitter-Pause. Verhindert Rate-Limits/False-Offline.
+- **Bulk-Löschen (Dashboard)**: Checkbox pro Mirror + „Alle auswählen (Seite)" + „Ausgewählte löschen (n)". `POST /api/mirrors/bulk-delete {ids}` (User-scoped, Admin=alle). testids: `select-{id}`, `select-all-toggle`, `bulk-delete-button`.
+- **Mirror-Bereinigung (Admin → Anbieter)**: Entfernt Hoster-Links aus allen Mirrors; Mirrors mit 0 Links werden gelöscht. `POST /api/admin/mirrors/cleanup {host_id?, offline_only, preview}`. Filter: Hoster-Dropdown (oder „Alle Hoster" → nur Offline erlaubt, Guard 400) + „Nur Offline-Links" + Vorschau vor Ausführung. testids: `cleanup-panel`, `cleanup-host-select`, `cleanup-offline-toggle`, `cleanup-preview-button`, `cleanup-run-button`.
+- Verifiziert (curl + Screenshot): Preview-Zahlen korrekt, Guard greift, beide UIs rendern & funktionieren. Keine destruktive Löschung auf Echtdaten ausgeführt.
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
 - P2: Email verification + password reset UI; referral/earnings estimate per mirror.
