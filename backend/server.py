@@ -20,6 +20,7 @@ import time
 import jwt
 import bcrypt
 import requests
+import re
 from urllib.parse import urlparse
 
 # ---------------------------------------------------------------------------
@@ -126,6 +127,9 @@ class MirrorInput(BaseModel):
 class TestKeyInput(BaseModel):
     api_provider: Optional[str] = None
     api_key: Optional[str] = None
+    host_id: Optional[str] = None
+
+class RefreshTiersInput(BaseModel):
     host_id: Optional[str] = None
 
 
@@ -383,6 +387,169 @@ def validate_api_key(provider: Optional[str], key: Optional[str]) -> dict:
         return {"ok": False, "message": f"Request failed: {e}"}
 
 
+# ---------------------------------------------------------------------------
+# Earning-tier auto-update (scrape hosters' public earn pages)
+# ---------------------------------------------------------------------------
+_SCRAPE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+# Full country name -> ISO alpha-2 (covers the names used on the VOE earn page + common ones).
+NAME_TO_ISO = {
+    "australia": "AU", "united kingdom": "GB", "united states": "US", "germany": "DE",
+    "austria": "AT", "canada": "CA", "denmark": "DK", "finland": "FI", "norway": "NO",
+    "bulgaria": "BG", "switzerland": "CH", "spain": "ES", "croatia": "HR", "ireland": "IE",
+    "italy": "IT", "netherlands": "NL", "new zealand": "NZ", "sweden": "SE", "thailand": "TH",
+    "belgium": "BE", "poland": "PL", "bosnia and herzegovina": "BA", "brazil": "BR",
+    "chile": "CL", "cyprus": "CY", "czech republic": "CZ", "czechia": "CZ", "greece": "GR",
+    "hong kong": "HK", "japan": "JP", "mexico": "MX", "romania": "RO", "serbia": "RS",
+    "united arab emirates": "AE", "hungary": "HU", "malaysia": "MY", "vietnam": "VN",
+    "france": "FR", "portugal": "PT", "south korea": "KR", "korea": "KR", "singapore": "SG",
+    "india": "IN", "indonesia": "ID", "russia": "RU", "turkey": "TR", "south africa": "ZA",
+    "slovakia": "SK", "argentina": "AR", "colombia": "CO", "peru": "PE", "egypt": "EG",
+    "pakistan": "PK", "philippines": "PH", "ukraine": "UA", "israel": "IL", "china": "CN",
+    "slovenia": "SI", "lithuania": "LT", "latvia": "LV", "estonia": "EE", "luxembourg": "LU",
+}
+
+def _name_to_iso(name: str):
+    return NAME_TO_ISO.get(name.strip().lower())
+
+def scrape_voe_tiers():
+    """Parse https://voe.sx/earn-money (server-rendered). Returns (tiers, default_rate)."""
+    html = requests.get("https://voe.sx/earn-money", timeout=15, headers=_SCRAPE_HEADERS).text
+    lines = [re.sub(r"\s+", " ", l).strip() for l in re.sub(r"<[^>]+>", "\n", html).split("\n")]
+    lines = [l for l in lines if l]
+    tiers, default_rate = [], None
+    current_rate = None
+    current_countries = []
+    def flush():
+        nonlocal current_rate, current_countries
+        if current_rate is not None and current_countries:
+            tiers.append({"name": f"Tier {len(tiers)+1}", "rate": current_rate,
+                          "countries": current_countries})
+        current_countries = []
+    started = False
+    for l in lines:
+        m = re.fullmatch(r"\$(\d+(?:\.\d+)?)", l)
+        if m:
+            started = True
+            flush()
+            current_rate = float(m.group(1))
+            continue
+        if not started:
+            continue
+        if l.lower().startswith("all other"):
+            # remaining rate is the default; stop after
+            default_rate = current_rate
+            current_rate = None
+            break
+        if current_rate is not None:
+            iso = _name_to_iso(l)
+            if iso:
+                current_countries.append(iso)
+            elif len(current_countries) > 0 and not re.match(r"^[A-Z]", l):
+                # hit non-country text -> end of tier block
+                flush()
+                current_rate = None
+    flush()
+    return tiers, default_rate
+
+def scrape_firestream_tiers():
+    """Parse FireStream tier data embedded in the SPA JS bundle. Returns (tiers, default_rate)."""
+    home = requests.get("https://firestream.to/", timeout=15, headers=_SCRAPE_HEADERS).text
+    m = re.search(r"assets/index-[A-Za-z0-9_\-]+\.js", home)
+    if not m:
+        return [], None
+    js = requests.get(f"https://firestream.to/{m.group(0)}", timeout=20, headers=_SCRAPE_HEADERS).text
+    found = re.findall(r'\{name:"(Tier \d+)",rate:(\d+(?:\.\d+)?),countries:"([^"]+)"', js)
+    tiers, default_rate = [], None
+    for name, rate, countries in found:
+        codes = [c.strip().upper() for c in countries.split(",")]
+        if all(re.fullmatch(r"[A-Z]{2}", c) for c in codes):
+            tiers.append({"name": f"Tier {len(tiers)+1}", "rate": float(rate), "countries": codes})
+        else:
+            # "All other countries" style -> default rate
+            default_rate = float(rate)
+    return tiers, default_rate
+
+TIER_SCRAPERS = {"voe": scrape_voe_tiers, "firestream": scrape_firestream_tiers}
+
+async def refresh_host_tiers(host: dict) -> dict:
+    prov = host.get("api_provider")
+    fn = TIER_SCRAPERS.get(prov or "")
+    if not fn:
+        return {"host_id": host.get("id"), "name": host.get("name"), "ok": False,
+                "message": "No public tier source for this host"}
+    try:
+        tiers, default_rate = await asyncio.to_thread(fn)
+        if not tiers:
+            return {"host_id": host.get("id"), "name": host.get("name"), "ok": False,
+                    "message": "Could not parse any tiers"}
+        update = {"tiers": tiers, "tiers_updated_at": now_iso()}
+        if default_rate is not None:
+            update["default_rate"] = default_rate
+        await db.hosts.update_one({"id": host["id"]}, {"$set": update})
+        return {"host_id": host.get("id"), "name": host.get("name"), "ok": True, "count": len(tiers)}
+    except Exception as e:
+        logger.warning(f"refresh_host_tiers {host.get('name')} failed: {e}")
+        return {"host_id": host.get("id"), "name": host.get("name"), "ok": False, "message": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Auto-fix offline links (find a re-uploaded file with the same name)
+# ---------------------------------------------------------------------------
+_VIDEO_EXT = re.compile(r"\.(mp4|mkv|avi|mov|webm|wmv|flv|m4v|ts)$", re.I)
+
+def _norm_title(s: str) -> str:
+    if not s:
+        return ""
+    return _VIDEO_EXT.sub("", s.strip()).strip().lower()
+
+def _dood_search_term(title: str) -> str:
+    """Doodstream search chokes on punctuation like '()'. Use the part before the first
+    bracket, stripped of punctuation, as a broad query and match exactly client-side."""
+    t = _VIDEO_EXT.sub("", title or "")
+    t = re.split(r"[(\[]", t)[0]
+    t = re.sub(r"[^\w\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t or _norm_title(title)
+
+def find_replacement(provider: str, key: str, title: str):
+    """Search the hoster account for the newest ONLINE file whose name matches `title`."""
+    target = _norm_title(title)
+    if not target or not key:
+        return None
+    try:
+        if provider == "doodstream":
+            term = _dood_search_term(title)
+            d = _api_json(f"{DOOD_API}/search/videos?key={key}&search_term={requests.utils.quote(term)}")
+            results = d.get("result") or []
+            exact = [r for r in results if _norm_title(r.get("title", "")) == target]
+            online = [r for r in exact if str(r.get("canplay")) in ("1", "True", "true")]
+            matches = online or exact
+            if not matches:
+                return None
+            matches.sort(key=lambda r: r.get("uploaded", ""), reverse=True)
+            code = matches[0].get("file_code")
+            return {"url": f"https://doodstream.com/e/{code}",
+                    "title": matches[0].get("title"), "code": code}
+        if provider == "voe":
+            d = _api_json(f"https://voe.sx/api/file/list?key={key}&per_page=250")
+            data = ((d.get("result") or {}).get("data")) or []
+            matches = [r for r in data if _norm_title(r.get("title") or r.get("name", "")) == target]
+            if not matches:
+                return None
+            matches.sort(key=lambda r: r.get("uploaded", ""), reverse=True)
+            code = matches[0].get("filecode") or matches[0].get("file_code")
+            prefix = voe_embed_prefix(key) or "https://voe.sx/e/"
+            return {"url": f"{prefix}{code}", "title": matches[0].get("title"), "code": code}
+    except Exception as e:
+        logger.warning(f"find_replacement {provider} failed: {e}")
+    return None
+
+
 async def resolve_mirror_links(mirror_id: str):
     """Background/on-demand: use host APIs (or HTTP probe) to set status + resolved playable url."""
     try:
@@ -506,6 +673,17 @@ async def test_host_key(inp: TestKeyInput, admin: dict = Depends(get_admin_user)
         key = resolve_api_key(provider, None)
     return await asyncio.to_thread(validate_api_key, provider, key)
 
+@api_router.post("/admin/hosts/refresh-tiers")
+async def refresh_tiers(inp: RefreshTiersInput, admin: dict = Depends(get_admin_user)):
+    if inp.host_id:
+        hosts = await db.hosts.find({"id": inp.host_id}).to_list(1)
+    else:
+        hosts = await db.hosts.find({"api_provider": {"$in": list(TIER_SCRAPERS.keys())}}).to_list(100)
+    results = []
+    for h in hosts:
+        results.append(await refresh_host_tiers(h))
+    return {"results": results}
+
 @api_router.delete("/hosts/{host_id}")
 async def delete_host(host_id: str, admin: dict = Depends(get_admin_user)):
     await db.hosts.delete_one({"id": host_id})
@@ -593,6 +771,37 @@ async def check_mirror(mirror_id: str, user: dict = Depends(get_current_user)):
     await resolve_mirror_links(mirror_id)
     updated = await db.mirrors.find_one({"id": mirror_id})
     return public_mirror(updated)
+
+
+@api_router.post("/mirrors/{mirror_id}/autofix/{host_id}")
+async def autofix_link(mirror_id: str, host_id: str, user: dict = Depends(get_current_user)):
+    m = await db.mirrors.find_one({"id": mirror_id})
+    if not m:
+        raise HTTPException(status_code=404, detail="Mirror not found")
+    if user.get("role") != "admin" and m["created_by"] != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+    link = next((l for l in m.get("links", []) if l["host_id"] == host_id), None)
+    if not link:
+        raise HTTPException(status_code=404, detail="Host link not found")
+    host = await db.hosts.find_one({"id": host_id})
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+    provider = host.get("api_provider")
+    if provider not in ("doodstream", "voe"):
+        raise HTTPException(status_code=400, detail="Auto-fix is not supported for this host")
+    key = resolve_api_key(provider, host.get("api_key"))
+    title = link.get("title") or m.get("title")
+    rep = await asyncio.to_thread(find_replacement, provider, key, title)
+    if not rep:
+        return {"ok": False, "message": "No matching online file found in your account"}
+    link["embed_url"] = rep["url"]
+    link["resolved_url"] = rep["url"]
+    link["status"] = "online"
+    if rep.get("title"):
+        link["title"] = rep["title"]
+    link["last_checked"] = now_iso()
+    await db.mirrors.update_one({"id": mirror_id}, {"$set": {"links": m["links"]}})
+    return {"ok": True, "new_url": rep["url"], "title": rep.get("title")}
 
 
 # ---------------------------------------------------------------------------
@@ -924,10 +1133,23 @@ async def offline_checker():
         except Exception as e:
             logger.error(f"Offline checker error: {e}")
 
+async def tier_updater():
+    interval = int(os.environ.get("TIER_UPDATE_HOURS", "24")) * 3600
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            hosts = await db.hosts.find({"api_provider": {"$in": list(TIER_SCRAPERS.keys())}}).to_list(100)
+            for h in hosts:
+                await refresh_host_tiers(h)
+            logger.info("Tier auto-update completed")
+        except Exception as e:
+            logger.error(f"Tier updater error: {e}")
+
 @app.on_event("startup")
 async def on_startup():
     await seed()
     asyncio.create_task(offline_checker())
+    asyncio.create_task(tier_updater())
 
 @app.on_event("shutdown")
 async def on_shutdown():

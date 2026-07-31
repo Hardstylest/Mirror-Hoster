@@ -5,7 +5,7 @@ import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw,
 } from "lucide-react";
 
 const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", tiers: [] };
@@ -171,6 +171,7 @@ export default function AdminDashboard() {
   const { settings, reloadSettings } = useSettings();
   const [siteForm, setSiteForm] = useState(null);
   const [savingSite, setSavingSite] = useState(false);
+  const [refreshingTiers, setRefreshingTiers] = useState(false);
 
   const load = useCallback(async () => {
     const [s, h, u] = await Promise.all([api.get("/admin/stats"), api.get("/hosts"), api.get("/admin/users")]);
@@ -201,6 +202,19 @@ export default function AdminDashboard() {
     toast.success(t("admin.host.deleted"));
     load();
   };
+
+  const refreshTiers = async () => {
+    setRefreshingTiers(true);
+    try {
+      const { data } = await api.post("/admin/hosts/refresh-tiers", {});
+      const ok = (data.results || []).filter((r) => r.ok).length;
+      toast.success(`${ok} ${t("admin.host.tiersRefreshed")}`);
+      await load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    setRefreshingTiers(false);
+  };
+
+  const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString(); } catch { return iso; } };
 
   const tabs = [
     { id: "overview", label: t("admin.tab.overview") },
@@ -237,7 +251,11 @@ export default function AdminDashboard() {
 
         {tab === "hosts" && (
           <div>
-            <div className="flex justify-end mb-4">
+            <div className="flex justify-end mb-4 gap-2">
+              <button onClick={refreshTiers} disabled={refreshingTiers} data-testid="refresh-tiers-button"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border hover:border-brand hover:text-brand disabled:opacity-60 transition-colors">
+                <RefreshCw size={18} className={refreshingTiers ? "animate-spin" : ""} /> {refreshingTiers ? t("admin.host.refreshingTiers") : t("admin.host.refreshTiers")}
+              </button>
               <button onClick={() => setEditor({ new: true })} data-testid="add-host-button" className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors"><Plus size={18} /> {t("admin.addHost")}</button>
             </div>
             <div className="space-y-3">
@@ -250,7 +268,7 @@ export default function AdminDashboard() {
                         <h3 className="font-display font-bold text-lg flex items-center gap-2">{h.name}
                           {!h.is_active && <span className="text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground">inactive</span>}
                         </h3>
-                        <p className="text-xs text-muted-foreground font-mono">{h.domain} · default ${h.default_rate}/10k</p>
+                        <p className="text-xs text-muted-foreground font-mono">{h.domain} · default ${h.default_rate}/10k{h.tiers_updated_at ? ` · ${t("admin.host.tiersUpdatedAt")}: ${fmtDate(h.tiers_updated_at)}` : ""}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">

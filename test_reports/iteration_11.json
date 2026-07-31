@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 11 validated tier auto-update and offline-link Auto-Fix through the public deployment. Backend regression passed 45/45 tests. POST /api/admin/hosts/refresh-tiers returned successful VOE and FireStream results; GET /api/hosts persisted VOE Tier 1 at $45 for AU/GB/US, FireStream Tier 1 at $40 for AU/DE/US/GB, and timestamps. DoodStream Auto-Fix replaced the bogus URL and persisted online status; FireStream returned the required 400; non-owner access returned 403. Frontend admin tier refresh and both Offline-Streams button states/click flows passed. Temporary mirrors were deleted.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/api/mirrors/{mirror_id}/autofix/{host_id}",
+        "issue": "Code review: replacement selection does not always enforce ONLINE status. DoodStream falls back to any exact title match when no canplay match exists, while VOE does not filter match status at all; the endpoint then unconditionally stores status='online'. This can falsely repair a link to another offline file outside the known-online fixture tested."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results_iteration_11.xml",
+    "/app/test_reports/pytest/pytest_iteration_11_targeted.xml"
+  ],
+  "action_items": [
+    "Filter DoodStream and VOE replacement candidates to provider-confirmed online/playable files only; if none are online, return ok:false rather than setting an offline candidate to online."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1171 lines, above the 700-line review threshold; split integrations, auth, hosts, mirrors, settings, and background jobs into focused modules.",
+    "find_replacement violates its own newest-ONLINE contract: DoodStream uses `online or exact`, VOE performs no online-status filter, and autofix_link then force-labels the selected file online without provider verification.",
+    "The tier refresh UI always emits toast.success, including when every result has ok=false (for example, `0 Anbieter-Tiers aktualisiert`); use an error/warning state when zero providers refresh successfully and distinguish partial success."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {
+    "backend": "100% (45/45 executed API regression tests passed; one unexercised online-candidate edge found by code review)",
+    "frontend": "100% (requested admin refresh and Offline-Streams Auto-Fix flows passed)"
+  },
+  "seed_data_creation": "Created isolated DoodStream and FireStream mirrors for backend and UI tests; every created mirror was deleted and deletion was verified. Full regression registered temporary TEST_ normal-user accounts via the existing fixture; no user-delete API exists. Tier refresh intentionally persisted current public tiers and tiers_updated_at timestamps.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 11 added TestTierRefreshAndAutoFix to backend_test.py and made older geo-rate assertions dynamic because tier auto-update intentionally changes public rates. UI selectors verified: refresh-tiers-button, offline-mirror-{id}, and autofix-{mirrorId}-{hostId}. Dood success toast text was 'Link automatisch ersetzt'; FireStream disabled title was 'Auto-Fix für diesen Hoster nicht verfügbar (keine Datei-Listen-API)'. The first UI run failed only because the test expected the word 'unterstützt'; the corrected rerun passed and both runs cleaned their own fixtures.",
+  "rca_of_the_issue": "find_replacement treats title equality as sufficient after an online filter misses: DoodStream explicitly falls back from `online` to `exact`, and VOE sorts all exact matches without checking provider status. autofix_link trusts that result and writes status='online'. Remove the fallback and validate VOE candidate status (or call provider file-info) before persisting."
+}

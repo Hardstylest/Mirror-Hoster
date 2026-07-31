@@ -4,23 +4,30 @@ import { toast } from "sonner";
 import api, { faviconUrl } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
-import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock } from "lucide-react";
+import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench } from "lucide-react";
 
 const fmtDate = (iso) => {
   if (!iso) return null;
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 };
 
+const AUTOFIX_PROVIDERS = ["doodstream", "voe"];
+
 export default function OfflineStreams() {
   const { t } = useI18n();
   const [mirrors, setMirrors] = useState([]);
+  const [providerMap, setProviderMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(null);
+  const [fixing, setFixing] = useState(null);
   const [recheckingAll, setRecheckingAll] = useState(false);
 
   const load = useCallback(async () => {
-    const { data } = await api.get("/mirrors");
-    setMirrors(data);
+    const [m, h] = await Promise.all([api.get("/mirrors"), api.get("/hosts")]);
+    setMirrors(m.data);
+    const pm = {};
+    h.data.forEach((x) => { pm[x.id] = x.api_provider; });
+    setProviderMap(pm);
     setLoading(false);
   }, []);
 
@@ -51,6 +58,16 @@ export default function OfflineStreams() {
       await load();
     } catch { toast.error(t("dash.checkFailed")); }
     setRecheckingAll(false);
+  };
+
+  const autofix = async (mirrorId, hostId) => {
+    setFixing(`${mirrorId}:${hostId}`);
+    try {
+      const { data } = await api.post(`/mirrors/${mirrorId}/autofix/${hostId}`);
+      if (data.ok) { toast.success(t("offline.autofixOk")); await load(); }
+      else toast.error(t("offline.autofixNone"));
+    } catch { toast.error(t("offline.autofixNone")); }
+    setFixing(null);
   };
 
   return (
@@ -98,16 +115,28 @@ export default function OfflineStreams() {
                     </div>
                     <p className="text-xs text-muted-foreground font-mono mt-1">/embed/{m.slug}</p>
                     <div className="flex flex-col gap-2 mt-3">
-                      {m.offlineLinks.map((l) => (
+                      {m.offlineLinks.map((l) => {
+                        const supported = AUTOFIX_PROVIDERS.includes(providerMap[l.host_id]);
+                        const busy = fixing === `${m.id}:${l.host_id}`;
+                        return (
                         <div key={l.host_id} className="flex items-center gap-3 text-sm bg-surface border border-border rounded-md px-3 py-2">
                           <img src={faviconUrl(l.host_domain)} alt="" width={16} height={16} onError={(e) => (e.currentTarget.style.display = "none")} />
                           <span className="font-medium">{l.host_name}</span>
                           <WifiOff size={14} className="text-offline" />
-                          <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock size={12} /> {t("offline.lastChecked")}: {fmtDate(l.last_checked) || t("offline.never")}
                           </span>
+                          <button
+                            onClick={() => supported && autofix(m.id, l.host_id)}
+                            disabled={!supported || busy}
+                            data-testid={`autofix-${m.id}-${l.host_id}`}
+                            title={supported ? t("offline.autofix") : t("offline.autofixUnsupported")}
+                            className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors disabled:opacity-40 disabled:cursor-not-allowed border-brand/40 text-brand hover:bg-brand hover:text-black">
+                            <Wrench size={12} className={busy ? "animate-spin" : ""} />
+                            {busy ? t("offline.autofixing") : t("offline.autofix")}
+                          </button>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">

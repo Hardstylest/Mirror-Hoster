@@ -140,28 +140,43 @@ class TestMirrors:
         for k in ["total_mirrors", "total_views", "links_online", "links_offline", "links_pending"]:
             assert k in d
 
-    def test_embed_public_no_auth_sorting_ES(self):
+    def test_embed_public_no_auth_sorting_ES(self, hosts):
         r = requests.get(f"{API}/embed/{pytest.mirror_slug}?country=ES")
         assert r.status_code == 200, r.text
         data = r.json()
         assert data["country_code"] == "ES"
-        hosts = data["hosts"]
-        assert len(hosts) == 2
-        # VOE tier for ES = 12, Dood tier for ES = 11 -> VOE first
-        assert hosts[0]["host_name"] == "VOE"
-        assert hosts[0]["rate"] == 12.0
-        assert hosts[1]["host_name"] == "DoodStream"
-        assert hosts[1]["rate"] == 11.0
+        embedded_hosts = data["hosts"]
+        assert len(embedded_hosts) == 2
+        configured = {host["name"]: host for host in hosts}
+        expected_rates = {}
+        for name in ("VOE", "DoodStream"):
+            host = configured[name]
+            expected_rates[name] = next(
+                (float(tier["rate"]) for tier in host["tiers"] if "ES" in tier["countries"]),
+                float(host["default_rate"]),
+            )
+        expected_order = sorted(expected_rates, key=expected_rates.get, reverse=True)
+        assert [host["host_name"] for host in embedded_hosts] == expected_order
+        for host in embedded_hosts:
+            assert host["rate"] == expected_rates[host["host_name"]]
 
-    def test_embed_public_no_auth_sorting_US(self):
+    def test_embed_public_no_auth_sorting_US(self, hosts):
         r = requests.get(f"{API}/embed/{pytest.mirror_slug}?country=US")
         assert r.status_code == 200
         data = r.json()
-        hosts = data["hosts"]
-        assert hosts[0]["host_name"] == "VOE"
-        assert hosts[0]["rate"] == 40.0
-        assert hosts[1]["host_name"] == "DoodStream"
-        assert hosts[1]["rate"] == 33.0
+        embedded_hosts = data["hosts"]
+        configured = {host["name"]: host for host in hosts}
+        expected_rates = {}
+        for name in ("VOE", "DoodStream"):
+            host = configured[name]
+            expected_rates[name] = next(
+                (float(tier["rate"]) for tier in host["tiers"] if "US" in tier["countries"]),
+                float(host["default_rate"]),
+            )
+        expected_order = sorted(expected_rates, key=expected_rates.get, reverse=True)
+        assert [host["host_name"] for host in embedded_hosts] == expected_order
+        for host in embedded_hosts:
+            assert host["rate"] == expected_rates[host["host_name"]]
 
     def test_mirror_stats(self, user_creds):
         r = requests.get(f"{API}/stats/mirror/{pytest.mirror_id}",
@@ -821,3 +836,146 @@ class TestFireStreamAndHostKeys:
             assert delete_response.status_code == 200
             confirm = requests.get(f"{API}/mirrors/{mirror_id}", headers=headers)
             assert confirm.status_code == 404
+
+
+
+# ---- Tier auto-update + offline-link auto-fix (iteration 11) ----
+class TestTierRefreshAndAutoFix:
+    """On-demand tier scraping and provider-specific offline-link replacement flows."""
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_refresh_tiers_updates_voe_and_firestream(self, admin_token):
+        headers = self._headers(admin_token)
+        before_response = requests.get(f"{API}/hosts", headers=headers)
+        assert before_response.status_code == 200, before_response.text
+        before = {host["id"]: host for host in before_response.json()}
+
+        response = requests.post(
+            f"{API}/admin/hosts/refresh-tiers", json={}, headers=headers, timeout=90
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert isinstance(data.get("results"), list), data
+        results = {before[item["host_id"]]["api_provider"]: item for item in data["results"]}
+        for provider in ("voe", "firestream"):
+            assert results[provider]["ok"] is True, results[provider]
+            assert isinstance(results[provider]["count"], int) and results[provider]["count"] > 0
+
+        hosts_response = requests.get(f"{API}/hosts", headers=headers)
+        assert hosts_response.status_code == 200, hosts_response.text
+        by_provider = {host.get("api_provider"): host for host in hosts_response.json()}
+        voe_tier_one = by_provider["voe"]["tiers"][0]
+        fire_tier_one = by_provider["firestream"]["tiers"][0]
+        assert voe_tier_one["rate"] == 45.0, voe_tier_one
+        assert set(voe_tier_one["countries"]) == {"AU", "GB", "US"}, voe_tier_one
+        assert fire_tier_one["rate"] == 40.0, fire_tier_one
+        assert set(fire_tier_one["countries"]) == {"AU", "DE", "US", "GB"}, fire_tier_one
+        for provider in ("voe", "firestream"):
+            stamp = by_provider[provider].get("tiers_updated_at")
+            assert isinstance(stamp, str) and stamp, by_provider[provider]
+
+    def test_doodstream_autofix_replaces_and_persists_online_link(self, admin_token):
+        headers = self._headers(admin_token)
+        hosts_response = requests.get(f"{API}/hosts", headers=headers)
+        dood = next(h for h in hosts_response.json() if h.get("api_provider") == "doodstream")
+        create_response = requests.post(
+            f"{API}/mirrors",
+            json={
+                "title": "Pranksters 3 (2019)",
+                "description": "TEST_AutoFix_DoodStream",
+                "links": [{
+                    "host_id": dood["id"],
+                    "embed_url": "https://doodstream.com/e/deadcodeXYZ",
+                }],
+            },
+            headers=headers,
+        )
+        assert create_response.status_code == 200, create_response.text
+        mirror_id = create_response.json()["id"]
+        try:
+            time.sleep(4)
+            response = requests.post(
+                f"{API}/mirrors/{mirror_id}/autofix/{dood['id']}",
+                headers=headers,
+                timeout=45,
+            )
+            assert response.status_code == 200, response.text
+            result = response.json()
+            assert result["ok"] is True, result
+            assert result["new_url"].startswith("https://doodstream.com/e/"), result
+            assert result["new_url"] != "https://doodstream.com/e/deadcodeXYZ"
+
+            get_response = requests.get(f"{API}/mirrors/{mirror_id}", headers=headers)
+            assert get_response.status_code == 200, get_response.text
+            link = get_response.json()["links"][0]
+            assert link["status"] == "online", link
+            assert link["embed_url"] == result["new_url"], link
+            assert link["embed_url"] != "https://doodstream.com/e/deadcodeXYZ"
+        finally:
+            delete_response = requests.delete(f"{API}/mirrors/{mirror_id}", headers=headers)
+            assert delete_response.status_code == 200, delete_response.text
+            assert requests.get(f"{API}/mirrors/{mirror_id}", headers=headers).status_code == 404
+
+    def test_firestream_autofix_is_rejected(self, admin_token):
+        headers = self._headers(admin_token)
+        hosts_response = requests.get(f"{API}/hosts", headers=headers)
+        firestream = next(h for h in hosts_response.json() if h.get("api_provider") == "firestream")
+        create_response = requests.post(
+            f"{API}/mirrors",
+            json={
+                "title": "TEST_AutoFix_Unsupported",
+                "description": "TEST_AutoFix_FireStream",
+                "links": [{
+                    "host_id": firestream["id"],
+                    "embed_url": "https://firestream.to/e/zzzzznope",
+                }],
+            },
+            headers=headers,
+        )
+        assert create_response.status_code == 200, create_response.text
+        mirror_id = create_response.json()["id"]
+        try:
+            response = requests.post(
+                f"{API}/mirrors/{mirror_id}/autofix/{firestream['id']}", headers=headers
+            )
+            assert response.status_code == 400, response.text
+            assert response.json()["detail"] == "Auto-fix is not supported for this host"
+        finally:
+            delete_response = requests.delete(f"{API}/mirrors/{mirror_id}", headers=headers)
+            assert delete_response.status_code == 200, delete_response.text
+
+    def test_non_owner_cannot_autofix_another_users_mirror(
+        self, admin_token, user_creds
+    ):
+        admin_headers = self._headers(admin_token)
+        user_headers = self._headers(user_creds["token"])
+        hosts_response = requests.get(f"{API}/hosts", headers=admin_headers)
+        dood = next(h for h in hosts_response.json() if h.get("api_provider") == "doodstream")
+        create_response = requests.post(
+            f"{API}/mirrors",
+            json={
+                "title": "Pranksters 3 (2019)",
+                "description": "TEST_AutoFix_Owner_Guard",
+                "links": [{
+                    "host_id": dood["id"],
+                    "embed_url": "https://doodstream.com/e/deadcodeXYZ",
+                }],
+            },
+            headers=admin_headers,
+        )
+        assert create_response.status_code == 200, create_response.text
+        mirror_id = create_response.json()["id"]
+        try:
+            response = requests.post(
+                f"{API}/mirrors/{mirror_id}/autofix/{dood['id']}", headers=user_headers
+            )
+            assert response.status_code == 403, response.text
+            assert response.json()["detail"] == "Not allowed"
+        finally:
+            delete_response = requests.delete(
+                f"{API}/mirrors/{mirror_id}", headers=admin_headers
+            )
+            assert delete_response.status_code == 200, delete_response.text
