@@ -487,10 +487,12 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not key:
                 return None
             chk = _api_json(f"{DOOD_API}/file/check?key={key}&file_code={code}")
+            if not (isinstance(chk, dict) and chk.get("status") == 200):
+                return None  # ambiguous/rate-limited -> fall back to HTTP probe
             res = chk.get("result") or []
             active = bool(res) and str(res[0].get("status")).lower() == "active"
             info = _api_json(f"{DOOD_API}/file/info?key={key}&file_code={code}")
-            ires = (info.get("result") or [{}])[0]
+            ires = (info.get("result") or [{}])[0] if isinstance(info, dict) else {}
             # Use the canonical embed URL as-is (browser follows the redirect with
             # no-referrer, exactly like ListMirror). Do NOT bake in the rotating
             # abuse-domain, which serves X-Frame-Options to server-side probes.
@@ -501,6 +503,8 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not key:
                 return None
             info = _api_json(f"https://voe.sx/api/file/info?key={key}&file_code={code}")
+            if not (isinstance(info, dict) and info.get("status") == 200):
+                return None  # ambiguous/rate-limited -> fall back to HTTP probe
             ires = (info.get("result") or [{}])[0]
             online = ires.get("status") == 200
             prefix = voe_embed_prefix(key) or "https://voe.sx/e/"
@@ -511,8 +515,12 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not key:
                 return None
             info = _api_json(f"https://firestream.to/api/file/info?key={key}&file_code={code}")
+            if not (isinstance(info, dict) and info.get("status") == 200):
+                return None  # ambiguous/rate-limited -> fall back to HTTP probe
             ires = (info.get("result") or [{}])[0]
-            online = ires.get("status") == 200 and ires.get("encoding_status") == "completed"
+            # A file that exists (status 200) is playable via /e/ even if the account's
+            # re-encoding is still "pending" (common for imported/foreign files).
+            online = ires.get("status") == 200
             return {"status": "online" if online else "offline",
                     "url": f"https://firestream.to/e/{code}",
                     "title": ires.get("title"), "thumbnail": None}
@@ -520,8 +528,10 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not api_key:
                 return None
             info = _api_json(f"https://api.playmate.to/file/info?key={api_key}&file_code={code}")
+            if not (isinstance(info, dict) and info.get("status") == 200):
+                return None
             ires = (info.get("result") or [{}])[0]
-            online = ires.get("status") == 200 and str(ires.get("canplay")) in ("1", "True", "true")
+            online = ires.get("status") == 200 or str(ires.get("canplay")) in ("1", "True", "true")
             return {"status": "online" if online else "offline",
                     "url": f"https://playmate.to/e/{code}",
                     "title": ires.get("name") or ires.get("title"), "thumbnail": None}
@@ -529,6 +539,8 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not api_key:
                 return None
             info = _api_json(f"https://api.vidara.so/v1/video/info?api_key={api_key}&filecode={code}")
+            if not (isinstance(info, dict) and info.get("status") == 200):
+                return None
             res = info.get("result")
             ires = (res[0] if isinstance(res, list) else res) or {}
             online = str(ires.get("status")) in ("200", "active") or str(ires.get("canplay")) in ("1", "True", "true")
@@ -539,6 +551,8 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not (api_key and login):
                 return None
             info = _api_json(f"https://api.streamtape.com/file/info?file={code}&login={login}&key={api_key}")
+            if not (isinstance(info, dict) and info.get("status") == 200):
+                return None
             res = info.get("result") or {}
             entry = res.get(code) if isinstance(res, dict) else None
             online = bool(entry) and entry.get("status") == 200
@@ -549,6 +563,8 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not api_key:
                 return None
             info = _api_json(f"https://api.vinovo.si/api/file/info?key={api_key}&file_code={code}")
+            if not (isinstance(info, dict) and info.get("status") == 200):
+                return None
             res = info.get("result") or []
             ires = (res[0] if isinstance(res, list) else res) or {}
             st = str(ires.get("status"))
@@ -560,9 +576,11 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             if not api_key:
                 return None
             info = _api_json(f"https://vidnest.io/api/file/info?key={api_key}&file_code={code}")
+            if not (isinstance(info, dict) and info.get("status") == 200):
+                return None
             res = info.get("result") or []
             ires = (res[0] if isinstance(res, list) else res) or {}
-            online = ires.get("status") == 200 and str(ires.get("canplay")) in ("1", "True", "true")
+            online = ires.get("status") == 200 or str(ires.get("canplay")) in ("1", "True", "true")
             return {"status": "online" if online else "offline",
                     "url": f"https://vidnest.io/e/{code}",
                     "title": ires.get("file_title") or ires.get("title"), "thumbnail": ires.get("player_img")}
