@@ -1509,21 +1509,36 @@ class SettingsInput(BaseModel):
     backup_schedule: str = "off"  # "off" | "daily" | "weekly"
     backup_retention: int = 7
 
+# Fields safe to expose on the PUBLIC settings endpoint (used by the SPA everywhere).
+PUBLIC_SETTINGS_KEYS = {
+    "site_name", "tagline", "description", "footer_text",
+    "ad_header", "ad_footer", "ad_player_top", "ad_player_bottom",
+    "turnstile_enabled", "turnstile_site_key", "turnstile_login", "turnstile_register", "turnstile_gate",
+    "antiadblock_enabled", "antiadblock_mode",
+}
+
 @api_router.get("/settings")
 async def get_settings():
-    s = await db.settings.find_one({"key": "site"})
-    if not s:
-        return DEFAULT_SETTINGS
+    """PUBLIC endpoint. Returns only non-sensitive display/config keys.
+    Admin-only integration config (OpenDrive, proxycheck, backup) is NOT exposed here."""
+    s = await db.settings.find_one({"key": "site"}) or {}
     s.pop("_id", None)
     merged = {**DEFAULT_SETTINGS, **s}
-    # Never leak secrets; expose only whether they are stored.
-    secret = merged.pop("turnstile_secret_key", None)
-    merged["has_turnstile_secret"] = bool(secret)
-    pkey = merged.pop("proxycheck_key", None)
-    merged["has_proxycheck_key"] = bool(pkey)
-    opass = merged.pop("opendrive_pass", None)
-    merged["has_opendrive_pass"] = bool(opass)
+    return {k: merged[k] for k in PUBLIC_SETTINGS_KEYS if k in merged}
+
+def _admin_settings_view(s: dict) -> dict:
+    """Full config for the admin UI: secrets masked, replaced by has_* flags."""
+    merged = {**DEFAULT_SETTINGS, **s}
+    merged.pop("_id", None)
+    merged["has_turnstile_secret"] = bool(merged.pop("turnstile_secret_key", None))
+    merged["has_proxycheck_key"] = bool(merged.pop("proxycheck_key", None))
+    merged["has_opendrive_pass"] = bool(merged.pop("opendrive_pass", None))
     return merged
+
+@api_router.get("/admin/settings")
+async def get_admin_settings(admin: dict = Depends(get_admin_user)):
+    s = await db.settings.find_one({"key": "site"}) or {}
+    return _admin_settings_view(s)
 
 @api_router.put("/admin/settings")
 async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_user)):
@@ -1538,13 +1553,7 @@ async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_us
         data.pop("opendrive_pass", None)
     await db.settings.update_one({"key": "site"}, {"$set": data}, upsert=True)
     stored = await db.settings.find_one({"key": "site"}) or {}
-    data.pop("_id", None)
-    data.pop("turnstile_secret_key", None)
-    data.pop("proxycheck_key", None)
-    data.pop("opendrive_pass", None)
-    return {**data, "has_turnstile_secret": bool(stored.get("turnstile_secret_key")),
-            "has_proxycheck_key": bool(stored.get("proxycheck_key")),
-            "has_opendrive_pass": bool(stored.get("opendrive_pass"))}
+    return _admin_settings_view(stored)
 
 # ---------------------------------------------------------------------------
 # First-run setup wizard

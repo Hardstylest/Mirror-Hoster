@@ -1,0 +1,29 @@
+{
+  "summary": "Frontend-only iteration-16 re-test completed through the public URL. Admin login, configured OpenDrive UI state, admin/public settings separation, OpenDrive connection test, and ZIP download all passed. Restore and OpenDrive upload were not run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AdminDashboard.jsx remains 935 lines and backend/server.py remains 2146 lines, above the 700-line maintainability threshold; split backup/settings and backend domains into focused modules when practical. No functional defect was observed in the requested flow."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_16.json"
+  ],
+  "success_rate": {
+    "backend": "Not tested (frontend-only request)",
+    "frontend": "100% of requested checks passed"
+  },
+  "seed_data_creation": "No seed data created. Downloaded one fresh backup ZIP for validation only; no settings were saved, no OpenDrive upload was started, and restore was not touched.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Public GET /api/settings returned HTTP 200 and omitted opendrive_user, opendrive_pass, backup_schedule, and opendrive_folder. Unauthenticated GET /api/admin/settings returned 401. After admin login, GET /api/admin/settings returned opendrive_enabled=true, opendrive_user=hardstylest@pm.me, has_opendrive_pass=true, folder MirrorStream-Backups, schedule=daily, and no raw opendrive_pass. The German Backup UI matched those values; the saved password placeholder was '•••••• (gespeichert)' and backup-run-button was enabled. Connection test returned HTTP 200 with ok=true/message='Connection OK'. Backup download returned HTTP 200 application/zip, generated a valid .zip, and showed 'Backup heruntergeladen'. Login set an HttpOnly access_token cookie. No application console/page errors were observed in the primary flow. A Cloudflare /cdn-cgi/rum telemetry abort and the intentional 401 access-control probe produced expected browser diagnostics only.",
+  "rca_of_the_issue": "Iteration-15's failure was environment data loss after restore plus the old public-settings data source. The re-provisioned database and new authenticated /api/admin/settings source now provide the configured state while PUBLIC_SETTINGS_KEYS excludes OpenDrive and backup metadata."
+}

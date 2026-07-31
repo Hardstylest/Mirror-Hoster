@@ -286,13 +286,14 @@ export default function AdminDashboard() {
   const [hosts, setHosts] = useState([]);
   const [users, setUsers] = useState([]);
   const [editor, setEditor] = useState(null); // {host} or {new:true}
-  const { settings, reloadSettings } = useSettings();
+  const { reloadSettings } = useSettings();
   const [siteForm, setSiteForm] = useState(null);
   const [savingSite, setSavingSite] = useState(false);
   const [refreshingTiers, setRefreshingTiers] = useState(false);
   const [userModal, setUserModal] = useState(null); // {mode:'create'} | {mode:'password', user}
   const [userSearch, setUserSearch] = useState("");
   const [loginAlerts, setLoginAlerts] = useState([]);
+  const [adminSettings, setAdminSettings] = useState({});
   const [backupBusy, setBackupBusy] = useState("");
   const restoreRef = useRef(null);
 
@@ -364,40 +365,41 @@ export default function AdminDashboard() {
 
   const load = useCallback(async () => {
     try {
-      const [s, h, u] = await Promise.all([api.get("/admin/stats"), api.get("/hosts"), api.get("/admin/users")]);
-      setStats(s.data); setHosts(h.data); setUsers(u.data);
+      const [s, h, u, cfg] = await Promise.all([api.get("/admin/stats"), api.get("/hosts"), api.get("/admin/users"), api.get("/admin/settings")]);
+      setStats(s.data); setHosts(h.data); setUsers(u.data); setAdminSettings(cfg.data);
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (tab === "security") loadAlerts(); }, [tab, loadAlerts]);
-  useEffect(() => { setSiteForm({
-    site_name: settings.site_name || "", tagline: settings.tagline || "",
-    description: settings.description || "", footer_text: settings.footer_text || "",
-    ad_header: settings.ad_header || "", ad_footer: settings.ad_footer || "",
-    ad_player_top: settings.ad_player_top || "", ad_player_bottom: settings.ad_player_bottom || "",
-    turnstile_enabled: !!settings.turnstile_enabled,
-    turnstile_site_key: settings.turnstile_site_key || "",
+  useEffect(() => { const cfg = adminSettings; setSiteForm({
+    site_name: cfg.site_name || "", tagline: cfg.tagline || "",
+    description: cfg.description || "", footer_text: cfg.footer_text || "",
+    ad_header: cfg.ad_header || "", ad_footer: cfg.ad_footer || "",
+    ad_player_top: cfg.ad_player_top || "", ad_player_bottom: cfg.ad_player_bottom || "",
+    turnstile_enabled: !!cfg.turnstile_enabled,
+    turnstile_site_key: cfg.turnstile_site_key || "",
     turnstile_secret_key: "",
-    turnstile_login: settings.turnstile_login !== false,
-    turnstile_register: settings.turnstile_register !== false,
-    turnstile_gate: settings.turnstile_gate !== false,
-    antiadblock_enabled: !!settings.antiadblock_enabled,
-    antiadblock_mode: settings.antiadblock_mode || "off",
-    proxycheck_enabled: !!settings.proxycheck_enabled,
+    turnstile_login: cfg.turnstile_login !== false,
+    turnstile_register: cfg.turnstile_register !== false,
+    turnstile_gate: cfg.turnstile_gate !== false,
+    antiadblock_enabled: !!cfg.antiadblock_enabled,
+    antiadblock_mode: cfg.antiadblock_mode || "off",
+    proxycheck_enabled: !!cfg.proxycheck_enabled,
     proxycheck_key: "",
-    opendrive_enabled: !!settings.opendrive_enabled,
-    opendrive_user: settings.opendrive_user || "",
+    opendrive_enabled: !!cfg.opendrive_enabled,
+    opendrive_user: cfg.opendrive_user || "",
     opendrive_pass: "",
-    opendrive_folder: settings.opendrive_folder || "MirrorStream-Backups",
-    backup_schedule: settings.backup_schedule || "off",
-    backup_retention: settings.backup_retention || 7,
-  }); }, [settings]);
+    opendrive_folder: cfg.opendrive_folder || "MirrorStream-Backups",
+    backup_schedule: cfg.backup_schedule || "off",
+    backup_retention: cfg.backup_retention || 7,
+  }); }, [adminSettings]);
 
   const saveSite = async () => {
     setSavingSite(true);
     try {
-      await api.put("/admin/settings", siteForm);
+      const { data } = await api.put("/admin/settings", siteForm);
+      setAdminSettings(data);
       await reloadSettings();
       toast.success(t("admin.settings.saved"));
     } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
@@ -694,7 +696,7 @@ export default function AdminDashboard() {
               <label className="text-sm text-muted-foreground">Secret Key</label>
               <input data-testid="turnstile-secret-key" type="password" value={siteForm.turnstile_secret_key}
                 onChange={(e) => setSiteForm({ ...siteForm, turnstile_secret_key: e.target.value })}
-                placeholder={settings.has_turnstile_secret ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : "0x4AAAAAAA..."}
+                placeholder={adminSettings.has_turnstile_secret ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : "0x4AAAAAAA..."}
                 spellCheck={false}
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
@@ -752,7 +754,7 @@ export default function AdminDashboard() {
                 <label className="text-sm text-muted-foreground">API-Key</label>
                 <input data-testid="proxycheck-key" type="password" value={siteForm.proxycheck_key}
                   onChange={(e) => setSiteForm({ ...siteForm, proxycheck_key: e.target.value })}
-                  placeholder={settings.has_proxycheck_key ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : "xxxxxx-xxxxxx-xxxxxx-xxxxxx"}
+                  placeholder={adminSettings.has_proxycheck_key ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : "xxxxxx-xxxxxx-xxxxxx-xxxxxx"}
                   spellCheck={false} autoComplete="off"
                   className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
               </div>
@@ -832,10 +834,10 @@ export default function AdminDashboard() {
                   <CloudUpload size={18} /> {backupBusy === "run" ? "…" : (lang === "de" ? "Jetzt zu OpenDrive sichern" : "Back up to OpenDrive now")}
                 </button>
               </div>
-              {settings.last_backup_at && (
+              {adminSettings.last_backup_at && (
                 <p className="text-xs text-muted-foreground" data-testid="last-backup-info">
                   {lang === "de" ? "Letztes Backup: " : "Last backup: "}
-                  {new Date(settings.last_backup_at).toLocaleString()} ({settings.last_backup_status})
+                  {new Date(adminSettings.last_backup_at).toLocaleString()} ({adminSettings.last_backup_status})
                 </p>
               )}
             </div>
@@ -859,7 +861,7 @@ export default function AdminDashboard() {
                   <label className="text-sm text-muted-foreground">{lang === "de" ? "Passwort" : "Password"}</label>
                   <input data-testid="opendrive-pass" type="password" value={siteForm.opendrive_pass} autoComplete="new-password"
                     onChange={(e) => setSiteForm({ ...siteForm, opendrive_pass: e.target.value })}
-                    placeholder={settings.has_opendrive_pass ? "•••••• (gespeichert)" : ""}
+                    placeholder={adminSettings.has_opendrive_pass ? "•••••• (gespeichert)" : ""}
                     className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none" />
                 </div>
                 <div>
