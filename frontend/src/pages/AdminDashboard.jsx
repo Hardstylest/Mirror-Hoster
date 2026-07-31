@@ -9,12 +9,12 @@ import {
   Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup,
 } from "lucide-react";
 
-const emptyHost = { name: "", domain: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
+const emptyHost = { name: "", domain: "", aliases: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
 
 function HostEditor({ host, onClose, onSaved }) {
   const { t: tr } = useI18n();
   const [form, setForm] = useState(
-    host ? { ...host, api_key: "", tiers: host.tiers.map((t) => ({ ...t, countries: t.countries.join(", ") })) }
+    host ? { ...host, api_key: "", aliases: (host.aliases || []).join(", "), tiers: host.tiers.map((t) => ({ ...t, countries: t.countries.join(", ") })) }
          : { ...emptyHost, tiers: [{ name: "Tier 1", rate: 20, countries: "" }] }
   );
   const [saving, setSaving] = useState(false);
@@ -90,6 +90,11 @@ function HostEditor({ host, onClose, onSaved }) {
               <label className="text-sm text-muted-foreground">{tr("admin.host.domain")}</label>
               <input data-testid="host-domain-input" value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="voe.sx" className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
             </div>
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground">{tr("admin.host.aliases")}</label>
+            <input data-testid="host-aliases-input" value={form.aliases} onChange={(e) => setForm({ ...form, aliases: e.target.value })} placeholder="dood.to, dsvplay.com, do7go.com" className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+            <p className="mt-1 text-xs text-muted-foreground">{tr("admin.host.aliasesHint")}</p>
           </div>
           <div className="flex items-center gap-6">
             <div>

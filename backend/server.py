@@ -123,6 +123,7 @@ class Tier(BaseModel):
 class HostInput(BaseModel):
     name: str
     domain: str
+    aliases: List[str] = []
     default_rate: float = 5.0
     tiers: List[Tier] = []
     is_active: bool = True
@@ -1276,9 +1277,11 @@ async def import_mirrors(inp: MirrorImportInput, user: dict = Depends(get_curren
 
     def find_host(domain: str):
         d = domain.lower()
+        def _m(a, b):
+            return a and b and (a == b or a.endswith("." + b) or b.endswith("." + a))
         for h in hosts:
-            hd = (h.get("domain") or "").lower()
-            if hd and (d == hd or d.endswith("." + hd) or hd.endswith("." + d)):
+            cands = [(h.get("domain") or "").lower()] + [str(x).lower() for x in (h.get("aliases") or [])]
+            if any(_m(d, c) for c in cands if c):
                 return h
         return None
 
@@ -1935,9 +1938,16 @@ DEFAULT_SETTINGS = {
     "backup_encrypt": False,
 }
 
+DOODSTREAM_ALIASES = [
+    "dood.to", "dood.watch", "dood.so", "dood.pm", "dood.ws", "dood.la", "dood.cx",
+    "dood.yt", "dood.re", "dood.li", "dood.wf", "doods.pro", "dooood.com", "ds2play.com",
+    "ds2video.com", "d0o0d.com", "d000d.com", "d-s.io", "dsvplay.com", "do7go.com",
+    "playmogo.com", "all3do.com", "vidply.com", "doodcdn.com", "vide0.net",
+]
+
 DEFAULT_HOSTS = [
     {
-        "name": "DoodStream", "domain": "doodstream.com", "default_rate": 5.0, "is_active": True,
+        "name": "DoodStream", "domain": "doodstream.com", "aliases": DOODSTREAM_ALIASES, "default_rate": 5.0, "is_active": True,
         "api_provider": "doodstream",
         "tiers": [
             {"name": "Tier 1", "rate": 33.0, "countries": ["AU", "CA", "GB", "US"]},
@@ -2016,6 +2026,41 @@ NEW_HOSTS = [
     },
 ]
 
+async def merge_duplicate_hosts():
+    """Fold auto-imported hosts into a canonical host when their domain matches the
+    canonical host's primary domain or an alias. Reassigns mirror links, then deletes
+    the duplicate. Idempotent (no-op once duplicates are gone)."""
+    def _m(a, b):
+        return a and b and (a == b or a.endswith("." + b) or b.endswith("." + a))
+    canon = await db.hosts.find({"auto_imported": {"$ne": True}}).to_list(1000)
+    dupes = await db.hosts.find({"auto_imported": True}).to_list(1000)
+    for dup in dupes:
+        dd = (dup.get("domain") or "").lower()
+        target = None
+        for h in canon:
+            cands = [(h.get("domain") or "").lower()] + [str(x).lower() for x in (h.get("aliases") or [])]
+            if any(_m(dd, c) for c in cands if c):
+                target = h
+                break
+        if not target:
+            continue
+        async for m in db.mirrors.find({"links.host_id": dup["id"]}):
+            new_links, seen = [], set()
+            for l in m.get("links", []):
+                l = dict(l)
+                if l.get("host_id") == dup["id"]:
+                    l["host_id"] = target["id"]
+                    l["host_name"] = target["name"]
+                    l["host_domain"] = target["domain"]
+                if l["host_id"] in seen:
+                    continue
+                seen.add(l["host_id"])
+                new_links.append(l)
+            await db.mirrors.update_one({"id": m["id"]}, {"$set": {"links": new_links}})
+        await db.hosts.delete_one({"id": dup["id"]})
+        logger.info(f"Merged duplicate host {dup.get('domain')} into {target.get('name')}")
+
+
 async def seed():
     await db.users.create_index("email", unique=True)
     # Only auto-create an admin when explicit credentials are provided via env.
@@ -2050,6 +2095,14 @@ async def seed():
                                {"$set": {"api_provider": "doodstream"}})
     await db.hosts.update_many({"name": "VOE", "api_provider": {"$exists": False}},
                                {"$set": {"api_provider": "voe"}})
+
+    # Seed DoodStream's many alternate embed domains (so imports map to the one host).
+    await db.hosts.update_many({"api_provider": "doodstream", "aliases": {"$exists": False}},
+                               {"$set": {"aliases": DOODSTREAM_ALIASES}})
+
+    # Merge auto-imported duplicate hosts into a canonical host when their domain matches
+    # a canonical host's primary domain or alias (e.g. DoodStream's many mirror domains).
+    await merge_duplicate_hosts()
 
     # Migrate API keys from .env into the DB (one-time) so admins manage them in the dashboard.
     dood_key = os.environ.get("DOODSTREAM_API_KEY")
