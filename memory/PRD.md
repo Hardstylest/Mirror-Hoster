@@ -71,8 +71,14 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Anti-Adblock** (Admin-Schalter, Player sperren): `AdblockGate.jsx` (Bait-Element-Erkennung) blockiert den Player bis Adblock aus; Setting `antiadblock_enabled`. Standard: AUS.
 - **Security-Fixes aus Test**: Autofix für neue Provider erreichbar; kein API-Key-Leak in Fehlermeldungen; Mobile-Layout Security-Tab (min-w-0) ohne Overflow; Secret nie im GET /settings. Getestet iteration_13 + iteration_14 (Backend 10/10, Frontend-Fixes 100%).
 
+## VPN/Proxy-Schutz + Anti-Adblock Abstufung (2026-06)
+- **VPN/Proxy-Schutz via proxycheck.io**: `check_vpn`/`_proxycheck_sync` (v2 API, `vpn=1&risk=1`), 24h-Cache (`proxycheck_cache`), fail-open. Embed-Endpoint liefert `vpn_blocked`/`vpn_type`; Player zeigt Block-Overlay (`vpn-block`). Admin → Sicherheit: Toggle + maskiertes API-Key-Feld (blank=behalten, Key nie im GET /settings → `has_proxycheck_key`). Getestet: Tor→blocked(risk100), Google/Cloudflare→allowed, End-to-End embed vpn_blocked=true, Key nicht geleakt.
+- **WICHTIG (Preview-Caveat)**: Im Emergent-Preview sieht das Backend nur die Load-Balancer-IP (35.186.245.91 → von proxycheck als VPN gemeldet). Daher `proxycheck_enabled` im Preview auf FALSE gelassen (Key ist gespeichert), sonst wäre der Preview-Player komplett gesperrt. Auf dem echten Docker+nginx-Server sieht das Backend die echte Besucher-IP → im Admin einfach den Schalter anmachen.
+- **Anti-Adblock mit Abstufung**: neues Setting `antiadblock_mode` ("off"/"warn"/"block"). „warn" = schließbare Hinweis-Leiste (Video läuft), „block" = harte Sperre. Erkennung blockt erst nach **2 aufeinanderfolgenden** Treffern (weniger Fehlalarme) + **„Erneut prüfen"-Button** (In-Place, ohne Reload) + „Seite neu laden". Aktuell: `block` (aktiviert per User-Wunsch).
+- proxycheck-Key des Users ist in der DB gespeichert (nicht im Code/Repo).
+
 ## NOCH OFFEN (nächster Schritt)
-- **VPN/Proxy-Schutz via proxycheck.io**: vom User gewünscht (Key-Feld im Admin, aus wenn kein Key, Player sperren bei VPN). NOCH NICHT gebaut — braucht integration_expert-Playbook + kostenlosen proxycheck.io-Key vom User.
+- (leer)
 
 ## Backlog / Next
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).

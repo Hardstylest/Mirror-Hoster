@@ -330,6 +330,9 @@ export default function AdminDashboard() {
     turnstile_register: settings.turnstile_register !== false,
     turnstile_gate: settings.turnstile_gate !== false,
     antiadblock_enabled: !!settings.antiadblock_enabled,
+    antiadblock_mode: settings.antiadblock_mode || "off",
+    proxycheck_enabled: !!settings.proxycheck_enabled,
+    proxycheck_key: "",
   }); }, [settings]);
 
   const saveSite = async () => {
@@ -656,15 +659,43 @@ export default function AdminDashboard() {
               <h3 className="font-display font-bold text-lg mt-4">{lang === "de" ? "Anti-Adblock" : "Anti-Adblock"}</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 {lang === "de"
-                  ? "Blockiert den Player, bis der Besucher seinen Adblocker deaktiviert."
-                  : "Blocks the player until the viewer disables their adblocker."}
+                  ? "Wähle die Schärfe. »Nur Hinweis« zeigt eine schließbare Leiste (Video läuft weiter); »Player sperren« blockiert bis der Adblocker aus ist. Erkennung blockt erst nach 2 Treffern und bietet einen »Erneut prüfen«-Button, um Fehlalarme zu vermeiden."
+                  : "Choose the strictness. 'Warning only' shows a dismissible banner (video keeps playing); 'Block player' blocks until the adblocker is off. Detection only blocks after 2 hits and offers a 'Re-check' button to avoid false positives."}
               </p>
-              <label className="flex items-center gap-3 cursor-pointer mt-3" data-testid="antiadblock-toggle">
-                <input type="checkbox" checked={!!siteForm.antiadblock_enabled}
-                  onChange={(e) => setSiteForm({ ...siteForm, antiadblock_enabled: e.target.checked })}
+              <select data-testid="antiadblock-mode" value={siteForm.antiadblock_mode}
+                onChange={(e) => setSiteForm({ ...siteForm, antiadblock_mode: e.target.value, antiadblock_enabled: e.target.value !== "off" })}
+                className="mt-3 w-full sm:w-72 bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none">
+                <option value="off">{lang === "de" ? "Aus" : "Off"}</option>
+                <option value="warn">{lang === "de" ? "Nur Hinweis (nicht sperren)" : "Warning only (no block)"}</option>
+                <option value="block">{lang === "de" ? "Player sperren (hart)" : "Block player (hard)"}</option>
+              </select>
+            </div>
+
+            <div className="pt-2 border-t border-border" data-testid="vpn-section">
+              <h3 className="font-display font-bold text-lg mt-4">{lang === "de" ? "VPN / Proxy-Schutz (proxycheck.io)" : "VPN / Proxy protection (proxycheck.io)"}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {lang === "de"
+                  ? "Sperrt den Player, wenn der Besucher über VPN/Proxy kommt. Benötigt einen kostenlosen API-Key von proxycheck.io. Ergebnisse werden 24 h gecacht; ohne Key ist die Funktion aus."
+                  : "Blocks the player when the visitor uses a VPN/proxy. Needs a free proxycheck.io API key. Results are cached for 24h; without a key the feature is off."}
+              </p>
+              <a href="https://proxycheck.io/dashboard/" target="_blank" rel="noreferrer"
+                className="mt-1 inline-block text-sm text-brand hover:underline" data-testid="proxycheck-help-link">
+                {lang === "de" ? "Zum proxycheck.io Dashboard →" : "Open proxycheck.io dashboard →"}
+              </a>
+              <label className="flex items-center gap-3 cursor-pointer mt-3" data-testid="proxycheck-toggle">
+                <input type="checkbox" checked={!!siteForm.proxycheck_enabled}
+                  onChange={(e) => setSiteForm({ ...siteForm, proxycheck_enabled: e.target.checked })}
                   className="w-4 h-4 accent-brand" />
-                <span className="text-sm">{lang === "de" ? "Anti-Adblock aktivieren (Player sperren)" : "Enable anti-adblock (block player)"}</span>
+                <span className="text-sm">{lang === "de" ? "VPN/Proxy-Sperre aktivieren" : "Enable VPN/proxy blocking"}</span>
               </label>
+              <div className="mt-3">
+                <label className="text-sm text-muted-foreground">API-Key</label>
+                <input data-testid="proxycheck-key" type="password" value={siteForm.proxycheck_key}
+                  onChange={(e) => setSiteForm({ ...siteForm, proxycheck_key: e.target.value })}
+                  placeholder={settings.has_proxycheck_key ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : "xxxxxx-xxxxxx-xxxxxx-xxxxxx"}
+                  spellCheck={false} autoComplete="off"
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              </div>
             </div>
 
             <button onClick={saveSite} disabled={savingSite} data-testid="save-security-button"

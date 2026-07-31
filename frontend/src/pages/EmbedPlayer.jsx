@@ -8,7 +8,7 @@ import { LanguageToggle } from "../components/LanguageToggle";
 import { AdSlot } from "../components/AdSlot";
 import { AdblockGate } from "../components/AdblockGate";
 import { VideoPlayer } from "../components/VideoPlayer";
-import { Film, Globe2, TrendingUp } from "lucide-react";
+import { Film, Globe2, TrendingUp, ShieldAlert } from "lucide-react";
 
 export default function EmbedPlayer() {
   const { slug } = useParams();
@@ -35,9 +35,21 @@ export default function EmbedPlayer() {
     <div className="min-h-screen flex items-center justify-center text-brand font-mono">{t("player.loading")}</div>
   );
 
+  if (data.vpn_blocked) return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-6" data-testid="vpn-block">
+      <div className="max-w-md w-full bg-card border border-offline/40 rounded-xl p-8 text-center shadow-2xl">
+        <div className="mx-auto w-12 h-12 rounded-full bg-offline/15 flex items-center justify-center text-offline">
+          <ShieldAlert size={24} />
+        </div>
+        <h2 className="mt-4 font-display font-black text-2xl">{t("player.vpnTitle")}</h2>
+        <p className="mt-2 text-sm text-muted-foreground">{t("player.vpnBody")}</p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <AdblockGate enabled={!!settings.antiadblock_enabled} />
+      <AdblockGate mode={settings.antiadblock_mode || (settings.antiadblock_enabled ? "block" : "off")} />
       <div className="w-full max-w-4xl">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <div className="flex items-center gap-3 min-w-0">

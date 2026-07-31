@@ -241,6 +241,42 @@ async def verify_turnstile(token: Optional[str], request: Request, surface: str)
         return False
     return await asyncio.to_thread(_turnstile_verify_sync, cfg["secret_key"], token, get_client_ip(request))
 
+
+# ---------------------------------------------------------------------------
+# proxycheck.io VPN/Proxy detection — optional, key stored in settings, fail-open
+# ---------------------------------------------------------------------------
+def _proxycheck_sync(key: str, ip: str) -> dict:
+    try:
+        r = requests.get(f"https://proxycheck.io/v2/{ip}",
+                          params={"key": key, "vpn": 1, "risk": 1}, timeout=(3, 5))
+        d = r.json() if r.content else {}
+        obj = d.get(ip, {}) if isinstance(d, dict) else {}
+        is_proxy = str(obj.get("proxy", "")).lower() == "yes"
+        return {"blocked": is_proxy, "enabled": True,
+                "type": obj.get("type"), "risk": obj.get("risk")}
+    except Exception as e:
+        logger.warning(f"proxycheck failed: {type(e).__name__}")
+        return {"blocked": False, "enabled": True, "fail_open": True}
+
+async def vpn_check(ip: str) -> dict:
+    """Returns {blocked: bool, ...}. Disabled/unconfigured -> not blocked. Fails open on errors.
+    Results are cached for 24h to preserve the free daily quota."""
+    s = await db.settings.find_one({"key": "site"}) or {}
+    if not s.get("proxycheck_enabled") or not s.get("proxycheck_key"):
+        return {"blocked": False, "enabled": False}
+    if not _is_public_host(f"http://{ip}"):  # skip private/loopback IPs
+        return {"blocked": False, "enabled": True}
+    now = datetime.now(timezone.utc)
+    cached = await db.proxycheck_cache.find_one({"ip": ip})
+    if cached and cached.get("expires_at") and datetime.fromisoformat(cached["expires_at"]) > now:
+        return cached["result"]
+    result = await asyncio.to_thread(_proxycheck_sync, s.get("proxycheck_key"), ip)
+    await db.proxycheck_cache.update_one(
+        {"ip": ip},
+        {"$set": {"ip": ip, "result": result, "expires_at": (now + timedelta(hours=24)).isoformat()}},
+        upsert=True)
+    return result
+
 _geo_cache = {}
 
 def geolocate(ip: str) -> dict:
@@ -1268,9 +1304,11 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
 
     if country:
         geo = {"country_code": country.upper(), "country": country.upper()}
+        vpn = {"blocked": False, "enabled": False}
     else:
         ip = get_client_ip(request)
         geo = await asyncio.to_thread(geolocate, ip)
+        vpn = await vpn_check(ip)
     cc = geo["country_code"]
 
     host_ids = [l["host_id"] for l in m.get("links", [])]
@@ -1320,6 +1358,8 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
         "country": geo["country"],
         "thumbnail": next((e["thumbnail"] for e in enriched if e.get("thumbnail")), None),
         "hosts": enriched,
+        "vpn_blocked": bool(vpn.get("blocked")),
+        "vpn_type": vpn.get("type"),
     }
 
 @api_router.post("/embed/{slug}/host-view/{host_id}")
@@ -1455,6 +1495,9 @@ class SettingsInput(BaseModel):
     turnstile_register: bool = True
     turnstile_gate: bool = True
     antiadblock_enabled: bool = False
+    antiadblock_mode: str = "off"  # "off" | "warn" | "block"
+    proxycheck_enabled: bool = False
+    proxycheck_key: str = ""  # blank on save = keep existing
 
 @api_router.get("/settings")
 async def get_settings():
@@ -1463,23 +1506,29 @@ async def get_settings():
         return DEFAULT_SETTINGS
     s.pop("_id", None)
     merged = {**DEFAULT_SETTINGS, **s}
-    # Never leak the Turnstile secret; expose only whether one is stored.
+    # Never leak secrets; expose only whether they are stored.
     secret = merged.pop("turnstile_secret_key", None)
     merged["has_turnstile_secret"] = bool(secret)
+    pkey = merged.pop("proxycheck_key", None)
+    merged["has_proxycheck_key"] = bool(pkey)
     return merged
 
 @api_router.put("/admin/settings")
 async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_user)):
     data = inp.model_dump()
     data["key"] = "site"
-    # Blank secret means "keep the existing one" (raw secret is never sent to the UI).
+    # Blank secrets mean "keep the existing one" (raw secrets are never sent to the UI).
     if not data.get("turnstile_secret_key"):
         data.pop("turnstile_secret_key", None)
+    if not data.get("proxycheck_key"):
+        data.pop("proxycheck_key", None)
     await db.settings.update_one({"key": "site"}, {"$set": data}, upsert=True)
+    stored = await db.settings.find_one({"key": "site"}) or {}
     data.pop("_id", None)
     data.pop("turnstile_secret_key", None)
-    return {**data, "has_turnstile_secret": bool(
-        (await db.settings.find_one({"key": "site"}) or {}).get("turnstile_secret_key"))}
+    data.pop("proxycheck_key", None)
+    return {**data, "has_turnstile_secret": bool(stored.get("turnstile_secret_key")),
+            "has_proxycheck_key": bool(stored.get("proxycheck_key"))}
 
 # ---------------------------------------------------------------------------
 # First-run setup wizard
@@ -1634,6 +1683,8 @@ DEFAULT_SETTINGS = {
     "turnstile_register": True,
     "turnstile_gate": True,
     "antiadblock_enabled": False,
+    "antiadblock_mode": "off",
+    "proxycheck_enabled": False,
 }
 
 DEFAULT_HOSTS = [
