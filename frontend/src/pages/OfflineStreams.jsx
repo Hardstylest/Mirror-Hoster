@@ -11,9 +11,9 @@ const fmtDate = (iso) => {
   try { return new Date(iso).toLocaleString(); } catch { return iso; }
 };
 
-const AUTOFIX_PROVIDERS = ["doodstream", "voe"];
+const AUTOFIX_PROVIDERS = ["doodstream", "voe", "playmate", "vidara", "vinovo", "vidnest"];
 
-const isAutofixSupported = (h) => h && (AUTOFIX_PROVIDERS.includes(h.provider) || (h.provider === "firestream" && h.has_login));
+const isAutofixSupported = (h) => h && (AUTOFIX_PROVIDERS.includes(h.provider) || ((h.provider === "firestream" || h.provider === "streamtape") && h.has_login));
 
 export default function OfflineStreams() {
   const { t } = useI18n();

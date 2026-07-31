@@ -110,7 +110,7 @@ export const DashboardLayout = ({ children }) => {
           </button>
         </div>
       </aside>
-      <main className="flex-1 md:ml-64 min-h-screen pt-14 md:pt-0">{children}</main>
+      <main className="flex-1 min-w-0 md:ml-64 min-h-screen pt-14 md:pt-0">{children}</main>
     </div>
   );
 };

@@ -1379,3 +1379,166 @@ class TestNewHostersAndSecurity:
         response = requests.get(f"{API}/admin/login-alerts", headers=headers)
         assert response.status_code == 403, response.text
         assert response.json()["detail"] == "Admin access required"
+
+
+
+# ---- Iteration 14 targeted fix verification ----
+class TestIteration14Fixes:
+    """Autofix reachability, alert thresholds, secret redaction, and core regressions."""
+
+    @staticmethod
+    def _headers(token):
+        return {"Authorization": f"Bearer {token}"}
+
+    @pytest.mark.parametrize(
+        ("provider", "expected_status"),
+        [
+            ("playmate", 200),
+            ("vidara", 200),
+            ("streamtape", 400),
+            ("vinovo", 200),
+            ("vidnest", 200),
+        ],
+    )
+    def test_new_provider_autofix_is_reachable(self, admin_token, provider, expected_status):
+        headers = self._headers(admin_token)
+        hosts_response = requests.get(f"{API}/hosts", headers=headers)
+        assert hosts_response.status_code == 200, hosts_response.text
+        host = next(h for h in hosts_response.json() if h.get("api_provider") == provider)
+        assert host["has_api_key"] is False, host
+
+        created = requests.post(
+            f"{API}/mirrors",
+            json={
+                "title": f"TEST_AutofixReachability_{provider}_{uuid.uuid4().hex[:8]}",
+                "description": "Iteration 14 targeted autofix allowlist test",
+                "links": [{
+                    "host_id": host["id"],
+                    "embed_url": f"https://{host['domain']}/e/TEST_missing_file",
+                }],
+            },
+            headers=headers,
+        )
+        assert created.status_code == 200, created.text
+        mirror = created.json()
+        mirror_id = mirror["id"]
+        try:
+            response = requests.post(
+                f"{API}/mirrors/{mirror_id}/autofix/{host['id']}",
+                headers=headers,
+                timeout=30,
+            )
+            assert response.status_code == expected_status, response.text
+            data = response.json()
+            assert data.get("detail") != "Auto-fix is not supported for this host", data
+            if provider == "streamtape":
+                assert data == {"detail": "Streamtape API-Login not configured"}
+            else:
+                assert data == {
+                    "ok": False,
+                    "message": "No matching online file found in your account",
+                }
+        finally:
+            deleted = requests.delete(f"{API}/mirrors/{mirror_id}", headers=headers)
+            assert deleted.status_code == 200, deleted.text
+            assert requests.get(f"{API}/mirrors/{mirror_id}", headers=headers).status_code == 404
+
+    def test_four_failed_logins_alert_is_not_locked_and_can_be_cleared(self, admin_token):
+        headers = self._headers(admin_token)
+        before_response = requests.get(f"{API}/admin/login-alerts", headers=headers)
+        assert before_response.status_code == 200, before_response.text
+        before = {
+            (item["kind"], item["ip"]): item["count"]
+            for item in before_response.json()
+        }
+        bad_email = f"TEST_iter14_alert_{uuid.uuid4().hex[:12]}@example.com"
+        observed_ip = None
+        try:
+            for _ in range(4):
+                failed = requests.post(
+                    f"{API}/auth/login",
+                    json={"email": bad_email, "password": "wrongpass"},
+                )
+                assert failed.status_code == 401, failed.text
+                assert failed.json()["detail"] == "Invalid email or password"
+
+            listed = requests.get(f"{API}/admin/login-alerts", headers=headers)
+            assert listed.status_code == 200, listed.text
+            candidates = [
+                item for item in listed.json()
+                if item["kind"] == "login"
+                and item["count"] >= before.get(("login", item["ip"]), 0) + 4
+            ]
+            assert candidates, {"before": before, "after": listed.json()}
+            alert = max(candidates, key=lambda item: item["count"])
+            observed_ip = alert["ip"]
+            assert alert["count"] >= 4
+            assert alert["locked"] is False, alert
+        finally:
+            if observed_ip:
+                cleared = requests.delete(
+                    f"{API}/admin/login-alerts/{observed_ip}", headers=headers
+                )
+                assert cleared.status_code == 200, cleared.text
+                after = requests.get(f"{API}/admin/login-alerts", headers=headers)
+                assert after.status_code == 200, after.text
+                assert all(item["ip"] != observed_ip for item in after.json())
+
+    def test_settings_and_key_test_never_leak_secrets(self, admin_token):
+        settings_response = requests.get(f"{API}/settings")
+        assert settings_response.status_code == 200, settings_response.text
+        settings = settings_response.json()
+        assert "turnstile_secret_key" not in settings
+        assert isinstance(settings.get("has_turnstile_secret"), bool)
+
+        marker = f"TEST_SECRET_MUST_NOT_LEAK_{uuid.uuid4().hex}"
+        key_response = requests.post(
+            f"{API}/hosts/test-key",
+            json={"api_provider": "vidnest", "api_key": marker},
+            headers=self._headers(admin_token),
+            timeout=30,
+        )
+        assert key_response.status_code == 200, key_response.text
+        data = key_response.json()
+        assert data.get("ok") is False, data
+        assert marker not in key_response.text
+        assert "api_key" not in data and "secret" not in data
+
+    def test_new_hosters_and_public_embed_regression(self, admin_token):
+        headers = self._headers(admin_token)
+        hosts_response = requests.get(f"{API}/hosts", headers=headers)
+        assert hosts_response.status_code == 200, hosts_response.text
+        by_provider = {host.get("api_provider"): host for host in hosts_response.json()}
+        for provider in ("playmate", "vidara", "streamtape", "vinovo", "vidnest"):
+            assert provider in by_provider, by_provider.keys()
+
+        playmate = by_provider["playmate"]
+        created = requests.post(
+            f"{API}/mirrors",
+            json={
+                "title": f"TEST_PublicEmbed_{uuid.uuid4().hex[:8]}",
+                "description": "Iteration 14 public player regression",
+                "links": [{
+                    "host_id": playmate["id"],
+                    "embed_url": "https://playmate.to/e/TEST_public_player",
+                }],
+            },
+            headers=headers,
+        )
+        assert created.status_code == 200, created.text
+        mirror = created.json()
+        try:
+            embed_api = requests.get(f"{API}/embed/{mirror['slug']}?country=DE", timeout=30)
+            assert embed_api.status_code == 200, embed_api.text
+            data = embed_api.json()
+            assert data["slug"] == mirror["slug"]
+            assert data["title"] == mirror["title"]
+            assert len(data["hosts"]) == 1
+            assert data["hosts"][0]["host_name"] == "Playmate"
+
+            player_page = requests.get(f"{BASE_URL}/e/{mirror['slug']}", timeout=30)
+            assert player_page.status_code == 200, player_page.text
+            assert "root" in player_page.text
+        finally:
+            deleted = requests.delete(f"{API}/mirrors/{mirror['id']}", headers=headers)
+            assert deleted.status_code == 200, deleted.text

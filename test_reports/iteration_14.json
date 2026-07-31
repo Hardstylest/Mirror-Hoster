@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 14 re-tested all requested fixes through the public URL. Backend targeted tests passed 8/8 and auth privacy checks passed 2/2. Mobile Admin > Sicherheit passed with and without a populated login-alert row: document width 390px at a 390px viewport, security panel x=32..358, alert row x=57..333. New-provider autofix is reachable, four failures remain unlocked and clear correctly, secrets are not returned, admin login/host list/public player regressions passed. One minor stale German threshold description remains.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Admin > Sicherheit > Login-Warnungen",
+        "issues": [
+          "German help text still says an IP is automatically locked after 5 failures, while the implemented IP login threshold is 20 (registration threshold 10; 5 is only the per-account threshold). The actual four-failure row correctly displayed unlocked."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_iteration_14_targeted.xml",
+    "/app/test_reports/pytest/pytest_iteration_14_auth.xml"
+  ],
+  "action_items": [
+    "Update the German/English Login-Warnungen explanatory copy to distinguish the per-account threshold of 5 from the per-IP login threshold of 20 and registration threshold of 10."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py remains 1867 lines and should be split into focused auth/security, host integration, mirror, settings, and admin modules.",
+    "Python static analysis still flags duplicate NAME_TO_ISO dictionary keys for russia and czech republic."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 executed tests)",
+    "frontend": "100% functional fix verification; one minor inaccurate help-text issue"
+  },
+  "seed_data_creation": "Created temporary TEST_ mirrors for all five new providers, temporary failed-login counters, and one temporary admin-managed bcrypt-check user. Mirrors, user, and generated login alerts were cleaned. Final antiadblock_enabled=false and turnstile_enabled=false were verified.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "All iteration 13 HIGH fixes now pass. Mobile populated-row measurements at 390x844: document scrollWidth=390, security panel x=32/right=358, alert row x=57/right=333. Playmate/Vidara/Vinovo/VidNest autofix returned 200 ok:false rather than unsupported; Streamtape returned its expected missing API-Login 400. Do not re-report wildcard CORS; it is intentional Bearer-token behavior.",
+  "rca_of_the_issue": "The remaining issue is stale hardcoded AdminDashboard help copy describing the old/simple five-failure IP rule; backend enforcement and the locked flag correctly use separate per-account, per-IP login, and registration thresholds."
+}

@@ -139,7 +139,7 @@ function HostEditor({ host, onClose, onSaved }) {
           {form.api_provider === "streamtape" && (
             <div className="space-y-3 border border-border rounded-md p-3 bg-surface/50">
               <p className="text-xs text-muted-foreground">
-                Streamtape braucht zusätzlich zum API-Key ein <strong>API-Login</strong> (beides im Streamtape-Panel unter „Account Settings"). API-Key kommt ins Feld oben.
+                Streamtape braucht zusätzlich zum API-Key ein <strong>API-Login</strong> (beides im Streamtape-Panel unter Account Settings). Der API-Key kommt ins Feld oben.
               </p>
               <div>
                 <label className="text-sm text-muted-foreground">API-Login</label>
@@ -599,7 +599,7 @@ export default function AdminDashboard() {
         )}
 
         {tab === "security" && siteForm && (
-          <div className="max-w-2xl bg-card border border-border rounded-lg p-6 space-y-5" data-testid="security-panel">
+          <div className="w-full max-w-2xl bg-card border border-border rounded-lg p-6 space-y-5" data-testid="security-panel">
             <div>
               <h3 className="font-display font-bold text-lg">{lang === "de" ? "Bot-Schutz (Cloudflare Turnstile)" : "Bot protection (Cloudflare Turnstile)"}</h3>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -693,17 +693,17 @@ export default function AdminDashboard() {
                 <div className="mt-4 space-y-2">
                   {loginAlerts.map((a) => (
                     <div key={`${a.kind}-${a.ip}`} data-testid={`login-alert-${a.ip}`}
-                      className={`flex items-center justify-between rounded-md border px-4 py-2.5 ${a.locked ? "border-offline/40 bg-offline/10" : "border-border bg-surface"}`}>
+                      className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-4 py-2.5 ${a.locked ? "border-offline/40 bg-offline/10" : "border-border bg-surface"}`}>
                       <div className="flex items-center gap-3 min-w-0">
-                        <Ban size={16} className={a.locked ? "text-offline" : "text-muted-foreground"} />
+                        <Ban size={16} className={a.locked ? "text-offline shrink-0" : "text-muted-foreground shrink-0"} />
                         <div className="min-w-0">
-                          <span className="font-mono text-sm">{a.ip}</span>
+                          <span className="font-mono text-sm break-all">{a.ip}</span>
                           <span className="ml-2 text-xs text-muted-foreground">
                             {a.kind === "register" ? (lang === "de" ? "Registrierung" : "sign-up") : "Login"}
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-3 shrink-0 ml-auto">
                         <span className="text-sm font-semibold text-offline">{a.count} {lang === "de" ? "Fehlversuche" : "fails"}</span>
                         {a.locked && <span className="text-xs px-2 py-0.5 rounded-full bg-offline/20 text-offline">{lang === "de" ? "gesperrt" : "locked"}</span>}
                         <button onClick={() => clearAlert(a.ip)} data-testid={`clear-alert-${a.ip}`}

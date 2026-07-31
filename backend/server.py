@@ -570,7 +570,9 @@ def validate_api_key(provider: Optional[str], key: Optional[str], login: Optiona
             return {"ok": False, "message": d.get("msg") or "Invalid login/key"}
         return {"ok": False, "message": "No key validation available for this provider"}
     except Exception as e:
-        return {"ok": False, "message": f"Request failed: {e}"}
+        # Never surface the raw exception: request URLs contain the API key.
+        logger.warning(f"validate_api_key {provider} failed: {type(e).__name__}")
+        return {"ok": False, "message": "Request failed. Please check the key and try again."}
 
 
 # ---------------------------------------------------------------------------
@@ -599,7 +601,7 @@ NAME_TO_ISO = {
     "slovenia": "SI", "lithuania": "LT", "latvia": "LV", "estonia": "EE", "luxembourg": "LU",
     "russian federation": "RU", "russia": "RU", "slovak republic": "SK", "czech republic": "CZ",
     "usa": "US", "uk": "GB", "united states of america": "US", "philipines": "PH",
-    "bosnia-herzegovina": "BA", "bosnia herzegovina": "BA", "south africa": "ZA",
+    "bosnia-herzegovina": "BA", "bosnia herzegovina": "BA",
 }
 
 def _name_to_iso(name: str):
@@ -1189,10 +1191,13 @@ async def autofix_link(mirror_id: str, host_id: str, user: dict = Depends(get_cu
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
     provider = host.get("api_provider")
-    if provider not in ("doodstream", "voe", "firestream"):
+    AUTOFIX_PROVIDERS = ("doodstream", "voe", "firestream", "playmate", "vidara", "streamtape", "vinovo", "vidnest")
+    if provider not in AUTOFIX_PROVIDERS:
         raise HTTPException(status_code=400, detail="Auto-fix is not supported for this host")
     if provider == "firestream" and not (host.get("login_email") and host.get("login_password")):
         raise HTTPException(status_code=400, detail="FireStream login not configured")
+    if provider == "streamtape" and not host.get("login_email"):
+        raise HTTPException(status_code=400, detail="Streamtape API-Login not configured")
     key = resolve_api_key(provider, host.get("api_key"))
     title = link.get("title") or m.get("title")
     rep = await asyncio.to_thread(find_replacement, provider, key, title, host)
@@ -1417,6 +1422,9 @@ async def login_alerts(admin: dict = Depends(get_admin_user)):
             continue
         locked = d.get("locked_until")
         is_locked = bool(locked and datetime.fromisoformat(locked) > now)
+        # A lock only actually blocks at the enforcement threshold (login-IP: 20, sign-up: 10).
+        threshold = 10 if kind == "register" else 20
+        is_locked = is_locked and count >= threshold
         alerts.append({"ip": ip, "kind": kind, "count": count,
                        "locked": is_locked, "locked_until": locked})
     alerts.sort(key=lambda a: -a["count"])
