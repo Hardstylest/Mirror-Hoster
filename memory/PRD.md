@@ -80,6 +80,14 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 ## NOCH OFFEN (nächster Schritt)
 - (leer)
 
+## Backup / Restore + OpenDrive Auto-Upload (2026-06)
+- **Manuelles Backup**: Admin → Tab „Backup" → „Jetzt herunterladen" erzeugt ein ZIP mit JSON-Export ALLER MongoDB-Collections + `manifest.json` + optional Server-Dateien aus `BACKUP_DATA_DIR` (Default `/app/backend/data`). Endpoint `GET /api/admin/backup/download`.
+- **OpenDrive Cloud-Upload**: `POST /api/admin/backup/run` lädt das ZIP zu OpenDrive (Session-Login → Ordner finden/anlegen → create_file/open/upload_chunk/close) und wendet Retention an (älteste Backups über N löschen). `POST /api/admin/backup/test-opendrive` prüft Zugang. Zugangsdaten (User + Passwort) in DB-Settings, Passwort maskiert (nie im API-Response → `has_opendrive_pass`).
+- **Automatischer Zeitplan**: `backup_scheduler()` (stündlicher Wake-up) läuft je nach `backup_schedule` täglich/wöchentlich; `backup_auto_at` verhindert Doppelläufe. Aktuell: **daily** aktiviert, Retention 7. Ordner „MirrorStream-Backups".
+- **Restore**: `POST /api/admin/backup/restore` (Multipart-ZIP-Upload) → droppt & re-importiert alle Collections + stellt Dateien wieder her. UI mit Bestätigungsdialog (destruktiv). Getestet: 251 Einträge wiederhergestellt.
+- **Security-Fix (aus Test)**: privater Config-Split — öffentliches `GET /api/settings` liefert NUR Anzeige-Keys (PUBLIC_SETTINGS_KEYS); OpenDrive-User/Backup-Metadaten/proxycheck nur über neues **admin-only** `GET /api/admin/settings` (auth-geschützt, 401 ohne Token). AdminDashboard lädt Formular aus `/admin/settings`.
+- OpenDrive-Zugang des Users ist in der DB gespeichert (User: hardstylest@pm.me; Passwort nur in DB, nicht im Repo/Code). Getestet: iteration_15 (UI+Download+Restore), iteration_16 (konfigurierter Zustand + Verbindung OK + Public/Admin-Trennung) → 100%.
+
 ## Backlog / Next
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
