@@ -295,6 +295,7 @@ export default function AdminDashboard() {
   const [loginAlerts, setLoginAlerts] = useState([]);
   const [adminSettings, setAdminSettings] = useState({});
   const [backupBusy, setBackupBusy] = useState("");
+  const [restorePw, setRestorePw] = useState("");
   const restoreRef = useRef(null);
 
   const downloadBackup = async () => {
@@ -339,6 +340,7 @@ export default function AdminDashboard() {
     try {
       const fd = new FormData();
       fd.append("file", fileObj);
+      fd.append("password", restorePw || "");
       const { data } = await api.post("/admin/backup/restore", fd, { headers: { "Content-Type": "multipart/form-data" } });
       const n = Object.values(data.restored || {}).reduce((a, b) => a + b, 0);
       toast.success((lang === "de" ? "Wiederhergestellt: " : "Restored: ") + n + (lang === "de" ? " Einträge" : " records"));
@@ -396,6 +398,8 @@ export default function AdminDashboard() {
     opendrive_folder: cfg.opendrive_folder || "MirrorStream-Backups",
     backup_schedule: cfg.backup_schedule || "off",
     backup_retention: cfg.backup_retention || 7,
+    backup_encrypt: !!cfg.backup_encrypt,
+    backup_password: "",
   }); }, [adminSettings]);
 
   const saveSite = async () => {
@@ -915,6 +919,28 @@ export default function AdminDashboard() {
                     className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none" />
                 </div>
               </div>
+              <div className="pt-2 border-t border-border space-y-3" data-testid="backup-encrypt-section">
+                <label className="flex items-center gap-3 cursor-pointer" data-testid="backup-encrypt-toggle">
+                  <input type="checkbox" checked={!!siteForm.backup_encrypt}
+                    onChange={(e) => setSiteForm({ ...siteForm, backup_encrypt: e.target.checked })}
+                    className="w-4 h-4 accent-brand" />
+                  <span className="text-sm font-medium">{lang === "de" ? "Backups mit Passwort verschlüsseln (AES-256)" : "Encrypt backups with a password (AES-256)"}</span>
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  {lang === "de"
+                    ? "Das Backup-ZIP wird stark verschlüsselt. Ohne dieses Passwort kann niemand (auch OpenDrive nicht) den Inhalt lesen oder wiederherstellen. Bewahre es sicher auf – ohne Passwort ist das Backup unbrauchbar."
+                    : "The backup ZIP is strongly encrypted. Without this password nobody (not even OpenDrive) can read or restore its contents. Store it safely — without it the backup is unusable."}
+                </p>
+                {siteForm.backup_encrypt && (
+                  <div>
+                    <label className="text-sm text-muted-foreground">{lang === "de" ? "Backup-Passwort" : "Backup password"}</label>
+                    <input data-testid="backup-password" type="password" value={siteForm.backup_password} autoComplete="new-password"
+                      onChange={(e) => setSiteForm({ ...siteForm, backup_password: e.target.value })}
+                      placeholder={adminSettings.has_backup_password ? (lang === "de" ? "•••••• (gespeichert – leer lassen = behalten)" : "•••••• (saved – leave empty to keep)") : (lang === "de" ? "Starkes Passwort wählen" : "Choose a strong password")}
+                      className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono focus:border-brand outline-none" />
+                  </div>
+                )}
+              </div>
               <div className="flex flex-wrap gap-3">
                 <button onClick={saveSite} disabled={savingSite} data-testid="save-backup-button"
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
@@ -941,6 +967,13 @@ export default function AdminDashboard() {
                 onChange={(e) => restoreBackup(e.target.files?.[0])}
                 disabled={!!backupBusy}
                 className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-offline file:text-white file:font-semibold hover:file:opacity-90 file:cursor-pointer" />
+              <div>
+                <label className="text-sm text-muted-foreground">{lang === "de" ? "Backup-Passwort (nur bei verschlüsseltem Backup)" : "Backup password (only for encrypted backups)"}</label>
+                <input data-testid="restore-password" type="password" value={restorePw} autoComplete="new-password"
+                  onChange={(e) => setRestorePw(e.target.value)}
+                  placeholder={lang === "de" ? "Leer lassen wenn unverschlüsselt" : "Leave empty if unencrypted"}
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono focus:border-brand outline-none" />
+              </div>
               {backupBusy === "restore" && <p className="text-xs text-brand">{lang === "de" ? "Stelle wieder her…" : "Restoring…"}</p>}
             </div>
           </div>

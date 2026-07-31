@@ -5,7 +5,7 @@ import os
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Query, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -21,6 +21,7 @@ import time
 import json
 import io
 import zipfile
+import pyzipper
 import jwt
 import bcrypt
 import requests
@@ -1511,6 +1512,8 @@ class SettingsInput(BaseModel):
     opendrive_folder: str = "MirrorStream-Backups"
     backup_schedule: str = "off"  # "off" | "daily" | "weekly"
     backup_retention: int = 7
+    backup_encrypt: bool = False
+    backup_password: str = ""  # blank on save = keep existing
 
 # Fields safe to expose on the PUBLIC settings endpoint (used by the SPA everywhere).
 PUBLIC_SETTINGS_KEYS = {
@@ -1537,6 +1540,7 @@ def _admin_settings_view(s: dict) -> dict:
     merged["has_turnstile_secret"] = bool(merged.pop("turnstile_secret_key", None))
     merged["has_proxycheck_key"] = bool(merged.pop("proxycheck_key", None))
     merged["has_opendrive_pass"] = bool(merged.pop("opendrive_pass", None))
+    merged["has_backup_password"] = bool(merged.pop("backup_password", None))
     return merged
 
 @api_router.get("/admin/settings")
@@ -1555,6 +1559,8 @@ async def update_settings(inp: SettingsInput, admin: dict = Depends(get_admin_us
         data.pop("proxycheck_key", None)
     if not data.get("opendrive_pass"):
         data.pop("opendrive_pass", None)
+    if not data.get("backup_password"):
+        data.pop("backup_password", None)
     await db.settings.update_one({"key": "site"}, {"$set": data}, upsert=True)
     stored = await db.settings.find_one({"key": "site"}) or {}
     return _admin_settings_view(stored)
@@ -1721,6 +1727,7 @@ DEFAULT_SETTINGS = {
     "opendrive_folder": "MirrorStream-Backups",
     "backup_schedule": "off",
     "backup_retention": 7,
+    "backup_encrypt": False,
 }
 
 DEFAULT_HOSTS = [
@@ -1906,13 +1913,20 @@ BACKUP_DATA_DIR = os.environ.get("BACKUP_DATA_DIR", str(ROOT_DIR / "data"))
 OD_BASE = "https://dev.opendrive.com/api/v1"
 BACKUP_PREFIX = "mirrorstream-backup-"
 
-async def build_backup_zip() -> bytes:
+async def build_backup_zip(password: str = "") -> bytes:
     """Zip every MongoDB collection as JSON + server config files (.env) + any files
-    under BACKUP_DATA_DIR (e.g. future uploads)."""
+    under BACKUP_DATA_DIR (e.g. future uploads). If `password` is set, the archive is
+    AES-256 encrypted (pyzipper)."""
     buf = io.BytesIO()
-    manifest = {"created_at": now_iso(), "db": os.environ["DB_NAME"], "collections": {}, "config": [], "files": 0}
+    manifest = {"created_at": now_iso(), "db": os.environ["DB_NAME"], "collections": {}, "config": [], "files": 0,
+                "encrypted": bool(password)}
     os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+    if password:
+        z = pyzipper.AESZipFile(buf, "w", compression=pyzipper.ZIP_DEFLATED, encryption=pyzipper.WZ_AES)
+        z.setpassword(password.encode("utf-8"))
+    else:
+        z = zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED)
+    with z:
         for name in await db.list_collection_names():
             docs = await db[name].find({}).to_list(100000)
             for d in docs:
@@ -1936,7 +1950,7 @@ async def build_backup_zip() -> bytes:
         z.writestr("manifest.json", json.dumps(manifest, indent=2))
     return buf.getvalue()
 
-async def restore_backup_zip(data: bytes) -> dict:
+async def restore_backup_zip(data: bytes, password: str = "") -> dict:
     restored = {}
 
     def _safe_join(base, rel):
@@ -1947,10 +1961,22 @@ async def restore_backup_zip(data: bytes) -> dict:
             return None
         return dest
 
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        if "manifest.json" not in z.namelist():
+    # pyzipper reads plain ZIPs too, so use it for both encrypted and unencrypted backups.
+    z = pyzipper.AESZipFile(io.BytesIO(data))
+    if password:
+        z.setpassword(password.encode("utf-8"))
+    with z:
+        is_encrypted = any((getattr(i, "flag_bits", 0) & 0x1) for i in z.infolist())
+        if is_encrypted and not password:
+            raise HTTPException(status_code=400, detail="This backup is encrypted. Please enter the backup password.")
+        names = z.namelist()
+        if "manifest.json" not in names:
             raise HTTPException(status_code=400, detail="Invalid backup file (no manifest.json)")
-        for n in z.namelist():
+        try:
+            z.read("manifest.json")  # validates the password early
+        except RuntimeError:
+            raise HTTPException(status_code=400, detail="Wrong backup password or corrupted archive.")
+        for n in names:
             if n.startswith("db/") and n.endswith(".json"):
                 coll = n[3:-5]
                 if not coll or "/" in coll or coll.startswith("system."):
@@ -2048,7 +2074,9 @@ def opendrive_upload_and_retain(user, passwd, folder, filename, data, retention)
 
 @api_router.get("/admin/backup/download")
 async def backup_download(admin: dict = Depends(get_admin_user)):
-    data = await build_backup_zip()
+    s = await db.settings.find_one({"key": "site"}) or {}
+    pw = s.get("backup_password", "") if s.get("backup_encrypt") else ""
+    data = await build_backup_zip(pw)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     fn = f"{BACKUP_PREFIX}{ts}.zip"
     return StreamingResponse(io.BytesIO(data), media_type="application/zip",
@@ -2059,7 +2087,10 @@ async def backup_run(admin: dict = Depends(get_admin_user)):
     s = await db.settings.find_one({"key": "site"}) or {}
     if not (s.get("opendrive_enabled") and s.get("opendrive_user") and s.get("opendrive_pass")):
         raise HTTPException(status_code=400, detail="OpenDrive is not configured/enabled")
-    data = await build_backup_zip()
+    if s.get("backup_encrypt") and not s.get("backup_password"):
+        raise HTTPException(status_code=400, detail="Encryption is enabled but no backup password is set.")
+    pw = s.get("backup_password", "") if s.get("backup_encrypt") else ""
+    data = await build_backup_zip(pw)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     fn = f"{BACKUP_PREFIX}{ts}.zip"
     try:
@@ -2090,12 +2121,12 @@ async def backup_test_opendrive(admin: dict = Depends(get_admin_user)):
         return {"ok": False, "message": "Login failed. Check username/password."}
 
 @api_router.post("/admin/backup/restore")
-async def backup_restore(file: UploadFile = File(...), admin: dict = Depends(get_admin_user)):
+async def backup_restore(file: UploadFile = File(...), password: str = Form(""), admin: dict = Depends(get_admin_user)):
     raw = await file.read()
     if len(raw) > 200 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Backup file too large")
     try:
-        restored = await restore_backup_zip(raw)
+        restored = await restore_backup_zip(raw, password)
     except zipfile.BadZipFile:
         raise HTTPException(status_code=400, detail="Not a valid ZIP backup file")
     return {"ok": True, "restored": restored}
@@ -2117,7 +2148,8 @@ async def backup_scheduler():
             now = datetime.now(timezone.utc)
             if last and (now - datetime.fromisoformat(last)).total_seconds() < interval:
                 continue
-            data = await build_backup_zip()
+            pw = s.get("backup_password", "") if s.get("backup_encrypt") else ""
+            data = await build_backup_zip(pw)
             fn = f"{BACKUP_PREFIX}{now.strftime('%Y%m%d-%H%M%S')}.zip"
             res = await asyncio.to_thread(opendrive_upload_and_retain, s["opendrive_user"], s["opendrive_pass"],
                                           s.get("opendrive_folder", "MirrorStream-Backups"), fn, data,
