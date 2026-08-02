@@ -52,8 +52,8 @@ sudo apt install -y nodejs && sudo npm i -g yarn
 ### 2. Projekt klonen
 
 ```bash
-git clone https://github.com/<dein-account>/mirrorstream.git
-cd mirrorstream
+git clone https://github.com/Hardstylest/Mirror-Hoster.git
+cd Mirror-Hoster
 ```
 
 ### 3. Backend konfigurieren
