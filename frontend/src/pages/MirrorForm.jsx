@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import api, { faviconUrl, formatApiError } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
-import { ArrowLeft, Save, WifiOff } from "lucide-react";
+import { ArrowLeft, Save, WifiOff, Trash2 } from "lucide-react";
 
 export default function MirrorForm() {
   const { id } = useParams();
@@ -55,6 +55,24 @@ export default function MirrorForm() {
       setLoading(false);
     })();
   }, [id, editing, t]);
+
+  const removeLegacy = (hid) => {
+    setLinks((p) => { const n = { ...p }; delete n[hid]; return n; });
+    setExtraHosts((e) => e.filter((x) => x.id !== hid));
+    toast.success(t("form.linkRemoved"));
+  };
+
+  const reassignLegacy = (hid, newId) => {
+    if (!newId) return;
+    setLinks((p) => {
+      const n = { ...p };
+      if (n[hid] != null) n[newId] = n[hid];
+      delete n[hid];
+      return n;
+    });
+    setExtraHosts((e) => e.filter((x) => x.id !== hid));
+    toast.success(t("form.linkReassigned"));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -132,6 +150,22 @@ export default function MirrorForm() {
                     {isOffline && <p className="text-xs text-offline mt-1">{t("form.offlineHint")}</p>}
                     {isLegacy && <p className="text-xs text-amber-500 mt-1">{t("form.legacyHint")}</p>}
                   </div>
+                  {isLegacy && (
+                    <div className="flex items-center gap-2 shrink-0 pt-1.5">
+                      <select
+                        data-testid={`reassign-${h.name.toLowerCase()}`}
+                        defaultValue=""
+                        onChange={(e) => { reassignLegacy(h.id, e.target.value); e.target.value = ""; }}
+                        className="bg-surface border border-border rounded-md px-2 py-2 text-sm max-w-[130px] focus:border-brand outline-none">
+                        <option value="" disabled>{t("form.reassignTo")}</option>
+                        {hosts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                      </select>
+                      <button type="button" onClick={() => removeLegacy(h.id)} data-testid={`remove-legacy-${h.name.toLowerCase()}`}
+                        title={t("form.removeLink")} className="p-2 rounded-md text-muted-foreground hover:text-offline hover:bg-secondary transition-colors">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               );})}
             </div>

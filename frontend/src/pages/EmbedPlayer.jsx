@@ -10,10 +10,20 @@ import { AdblockGate } from "../components/AdblockGate";
 import { VideoPlayer } from "../components/VideoPlayer";
 import { Film, Globe2, TrendingUp, ShieldAlert } from "lucide-react";
 
+const flagEmoji = (cc) => {
+  if (!cc || cc.length !== 2 || !/^[a-zA-Z]{2}$/.test(cc)) return null;
+  const base = 0x1f1e6;
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => base + c.charCodeAt(0) - 65));
+};
+const countryName = (cc, lang) => {
+  try { return new Intl.DisplayNames([lang || "de"], { type: "region" }).of(cc.toUpperCase()) || cc; }
+  catch { return cc; }
+};
+
 export default function EmbedPlayer({ full = false }) {
   const { slug } = useParams();
   const { settings } = useSettings();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
 
@@ -62,8 +72,11 @@ export default function EmbedPlayer({ full = false }) {
               <h1 className="font-display font-bold text-xl truncate">{data.title}</h1>
             </div>
             <div className="flex items-center gap-2 text-sm">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-card border border-border text-muted-foreground" data-testid="viewer-country">
-                <Globe2 size={14} /> {data.country} ({data.country_code})
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-card border border-border text-muted-foreground cursor-default" data-testid="viewer-country" title={countryName(data.country_code, lang)}>
+                {flagEmoji(data.country_code)
+                  ? <span className="text-base leading-none" aria-hidden>{flagEmoji(data.country_code)}</span>
+                  : <Globe2 size={14} />}
+                <span>{countryName(data.country_code, lang)}</span>
               </span>
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand/10 border border-brand/30 text-brand">
                 <TrendingUp size={14} /> {t("player.bestFirst")}
