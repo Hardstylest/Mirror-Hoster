@@ -33,7 +33,9 @@ export default function LandingPage() {
           ) : (
             <>
               <Link to="/login" data-testid="header-login-link" className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">{t("nav.signin")}</Link>
-              <Link to="/register" data-testid="header-register-link" className="px-4 py-2 rounded-md bg-brand text-black font-semibold text-sm hover:bg-brand-hover transition-colors">{t("nav.getstarted")}</Link>
+              {settings.registration_open !== false && (
+                <Link to="/register" data-testid="header-register-link" className="px-4 py-2 rounded-md bg-brand text-black font-semibold text-sm hover:bg-brand-hover transition-colors">{t("nav.getstarted")}</Link>
+              )}
             </>
           )}
         </div>
@@ -52,7 +54,7 @@ export default function LandingPage() {
             {settings.description || settings.tagline}
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">
-            <Link to={user ? "/dashboard" : "/register"} data-testid="hero-cta-button" className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
+            <Link to={user ? "/dashboard" : (settings.registration_open === false ? "/login" : "/register")} data-testid="hero-cta-button" className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
               {t("landing.cta")} <ArrowRight size={18} />
             </Link>
             <Link to="/login" data-testid="hero-signin-button" className="px-6 py-3 rounded-md border border-border text-foreground hover:border-brand transition-colors">{t("nav.signin")}</Link>

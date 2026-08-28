@@ -23,6 +23,7 @@ export default function Register() {
   const [nonce, setNonce] = useState(0);
 
   const captchaOn = settings.turnstile_enabled && settings.turnstile_register && !!settings.turnstile_site_key;
+  const closed = settings.registration_open === false;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -52,6 +53,13 @@ export default function Register() {
       </div>
       <div className="flex-1 flex items-center justify-center px-6 py-12 bg-background relative">
         <div className="absolute top-6 right-6 flex items-center gap-2"><LanguageToggle /><ThemeToggle /></div>
+        {closed ? (
+          <div className="w-full max-w-sm animate-fade-up" data-testid="registration-closed">
+            <h1 className="font-display font-black text-3xl">{t("auth.regClosedTitle")}</h1>
+            <p className="mt-3 text-sm text-muted-foreground">{t("auth.regClosedBody")}</p>
+            <Link to="/login" data-testid="register-closed-login-link" className="mt-6 inline-flex w-full justify-center py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">{t("nav.signin")}</Link>
+          </div>
+        ) : (
         <form onSubmit={submit} className="w-full max-w-sm animate-fade-up">
           <h1 className="font-display font-black text-3xl">{t("auth.createAccount")}</h1>
           <p className="mt-2 text-sm text-muted-foreground">{t("auth.registerSubtitle")}</p>
@@ -86,6 +94,7 @@ export default function Register() {
             {t("auth.haveAccount")} <Link to="/login" className="text-brand hover:underline">{t("nav.signin")}</Link>
           </p>
         </form>
+        )}
       </div>
     </div>
   );

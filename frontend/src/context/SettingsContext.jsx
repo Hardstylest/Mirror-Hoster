@@ -19,6 +19,7 @@ const FALLBACK = {
   turnstile_gate: true,
   antiadblock_enabled: false,
   antiadblock_mode: "off",
+  registration_open: true,
   proxycheck_enabled: false,
   has_proxycheck_key: false,
   has_turnstile_secret: false,

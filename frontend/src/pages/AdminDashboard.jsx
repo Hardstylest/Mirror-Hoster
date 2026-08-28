@@ -410,6 +410,7 @@ export default function AdminDashboard() {
     turnstile_login: cfg.turnstile_login !== false,
     turnstile_register: cfg.turnstile_register !== false,
     turnstile_gate: cfg.turnstile_gate !== false,
+    registration_open: cfg.registration_open !== false,
     antiadblock_enabled: !!cfg.antiadblock_enabled,
     antiadblock_mode: cfg.antiadblock_mode || "off",
     proxycheck_enabled: !!cfg.proxycheck_enabled,
@@ -789,6 +790,17 @@ export default function AdminDashboard() {
                   <span className="text-sm">{f.label}</span>
                 </label>
               ))}
+            </div>
+
+            <div className="pt-2 border-t border-border" data-testid="registration-section">
+              <h3 className="font-display font-bold text-lg mt-4">{lang === "de" ? "User-Registrierung" : "User registration"}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{lang === "de" ? "Wenn geschlossen, können sich keine neuen Nutzer registrieren. Bestehende Nutzer loggen sich weiterhin normal ein." : "When closed, no new users can register. Existing users can still log in normally."}</p>
+              <label className="flex items-center gap-3 cursor-pointer mt-3" data-testid="registration-open-toggle">
+                <input type="checkbox" checked={siteForm.registration_open !== false}
+                  onChange={(e) => setSiteForm({ ...siteForm, registration_open: e.target.checked })}
+                  className="w-4 h-4 accent-brand" />
+                <span className="text-sm">{siteForm.registration_open !== false ? (lang === "de" ? "Registrierung geöffnet" : "Registration open") : (lang === "de" ? "Registrierung geschlossen" : "Registration closed")}</span>
+              </label>
             </div>
 
             <div className="pt-2 border-t border-border" data-testid="antiadblock-section">

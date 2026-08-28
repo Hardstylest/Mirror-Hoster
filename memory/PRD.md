@@ -189,3 +189,11 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Titel-Duplikat-Warnung** (`server.py` `GET /api/mirrors/check-title`, `MirrorForm.jsx`): Beim Erstellen (debounced) wird geprüft, ob der Titel schon existiert (eigene Mirrors; Admin=alle). Nicht-blockierende Warnbox mit Trefferliste + Watch/Embed-Links. Keys: `form.titleExists/titleExistsHint`.
 - **Thumbnails via VOE (GELÖST)**: DoodStream-Cover sind tot (`doimg.net`/`dodoimg.com`). Lösung über VOE: der User lieferte das funktionierende Muster `https://voe.sx/cache/{file_code}_storyboard_L1.jpg` (HTTP 200, JPEG, 1279×719 16:9, kein Hotlink-Schutz, code-basiert – kein API-Call nötig). Umsetzung: `api_resolve_link` VOE setzt bei online dieses Cover; DoodStream setzt kein (totes) Cover mehr; einmalige Startup-Migration `migrate_voe_thumbnails()` (Flag `voe_thumb_migration_v1`) entfernt tote DoodStream-Thumbnails und ergänzt VOE-Storyboard-Cover für alle online VOE-Links. Verifiziert: 87/87 online VOE-Links haben Cover, 0 tote Thumbs; Dashboard zeigt Cover.
 
+
+## Registrierung öffnen/schließen (Admin-Toggle) (2026-06)
+- **Feature**: Admin kann öffentliche User-Registrierung an/aus schalten. Setting `registration_open` (Default true) im `site`-Settings-Doc; in `SettingsInput`, `DEFAULT_SETTINGS`, `PUBLIC_SETTINGS_KEYS`.
+- **Backend** (`server.py`): `register`-Endpoint prüft zu Beginn `registration_open`; wenn false → HTTP 403 „Registration is currently closed." (Login unberührt). Flag über `PUT /api/admin/settings` (volles `siteForm`), öffentlich lesbar via `GET /api/settings`.
+- **Frontend**: Admin-Toggle „Registrierung geöffnet" im Tab **Sicherheit** (`AdminDashboard.jsx`, `siteForm.registration_open`, `data-testid=registration-open-toggle`). `Register.jsx` zeigt bei geschlossen eine „Registrierung geschlossen"-Karte statt Formular. `Login.jsx` blendet „Erstelle eins" aus (zeigt Hinweis), `LandingPage.jsx` blendet Header-Register-Button aus + Hero-CTA → `/login`. `SettingsContext` FALLBACK `registration_open:true`. Keys: `auth.regClosedShort/regClosedTitle/regClosedBody`.
+- **Integration**: integration_expert (JWT-Auth-Playbook) vor der Auth-Änderung konsultiert.
+- Verifiziert: curl (403 bei geschlossen, `/settings` exponiert Flag, zurückgesetzt); Screenshots (Admin-Toggle im Sicherheit-Tab, geschlossene Register-Seite).
+

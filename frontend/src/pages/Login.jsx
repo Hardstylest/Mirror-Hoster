@@ -77,7 +77,9 @@ export default function Login() {
             {loading ? t("auth.signingIn") : t("nav.signin")}
           </button>
           <p className="mt-6 text-sm text-center text-muted-foreground">
-            {t("auth.noAccount")} <Link to="/register" className="text-brand hover:underline">{t("auth.createOne")}</Link>
+            {settings.registration_open === false
+              ? t("auth.regClosedShort")
+              : <>{t("auth.noAccount")} <Link to="/register" className="text-brand hover:underline">{t("auth.createOne")}</Link></>}
           </p>
         </form>
       </div>

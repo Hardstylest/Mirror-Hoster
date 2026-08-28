@@ -1035,6 +1035,9 @@ async def resolve_many(mirror_ids: list):
 # ---------------------------------------------------------------------------
 @api_router.post("/auth/register")
 async def register(inp: RegisterInput, request: Request, response: Response):
+    site = await db.settings.find_one({"key": "site"}) or {}
+    if not {**DEFAULT_SETTINGS, **site}.get("registration_open", True):
+        raise HTTPException(status_code=403, detail="Registration is currently closed.")
     if not await verify_turnstile(inp.turnstile_token, request, "register"):
         raise HTTPException(status_code=400, detail="Bot verification failed. Please try again.")
     ip = get_client_ip(request)
@@ -2031,6 +2034,7 @@ class SettingsInput(BaseModel):
     turnstile_login: bool = True
     turnstile_register: bool = True
     turnstile_gate: bool = True
+    registration_open: bool = True
     antiadblock_enabled: bool = False
     antiadblock_mode: str = "off"  # "off" | "warn" | "block"
     proxycheck_enabled: bool = False
@@ -2050,7 +2054,7 @@ PUBLIC_SETTINGS_KEYS = {
     "ad_header", "ad_footer", "ad_player_top", "ad_player_bottom",
     "ad_preroll", "ad_preroll_enabled", "ad_preroll_seconds",
     "turnstile_enabled", "turnstile_site_key", "turnstile_login", "turnstile_register", "turnstile_gate",
-    "antiadblock_enabled", "antiadblock_mode",
+    "antiadblock_enabled", "antiadblock_mode", "registration_open",
 }
 
 @api_router.get("/settings")
@@ -2249,6 +2253,7 @@ DEFAULT_SETTINGS = {
     "turnstile_login": True,
     "turnstile_register": True,
     "turnstile_gate": True,
+    "registration_open": True,
     "antiadblock_enabled": False,
     "antiadblock_mode": "off",
     "proxycheck_enabled": False,
