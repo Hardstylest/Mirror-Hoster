@@ -376,7 +376,7 @@ export default function AdminDashboard() {
     try {
       const { data } = await api.get("/admin/login-alerts");
       setLoginAlerts(data);
-    } catch (e) { /* noop */ }
+    } catch (e) { console.error("Failed to load login alerts:", e); }
   }, []);
 
   const clearAlert = async (ip) => {
@@ -569,7 +569,7 @@ export default function AdminDashboard() {
                   )}
                   <div className="flex flex-wrap gap-2 mt-4">
                     {h.tiers.map((t, i) => (
-                      <div key={i} className="text-xs bg-surface border border-border rounded px-2.5 py-1.5">
+                      <div key={`${t.name}-${i}`} className="text-xs bg-surface border border-border rounded px-2.5 py-1.5">
                         <span className="text-brand font-semibold">${t.rate}</span>
                         <span className="text-muted-foreground"> · {t.name}: </span>
                         <span className="font-mono">{t.countries.join(", ")}</span>

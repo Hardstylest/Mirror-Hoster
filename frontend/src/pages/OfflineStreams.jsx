@@ -41,7 +41,7 @@ export default function OfflineStreams() {
       h.data.forEach((x) => { pm[x.id] = { provider: x.api_provider, has_login: x.has_login }; });
       setHostMap(pm);
       setLogs(fl.data);
-    } catch { /* keep previous state */ }
+    } catch (e) { console.error("Failed to load offline data:", e); /* keep previous state */ }
     setLoading(false);
     window.dispatchEvent(new Event("offline-updated"));
   }, []);
@@ -104,7 +104,7 @@ export default function OfflineStreams() {
     }));
     let fixed = 0;
     await Promise.all(jobs.map(async (j) => {
-      try { const { data } = await api.post(`/mirrors/${j.mid}/autofix/${j.hid}`); if (data.ok) fixed += 1; } catch { /* ignore */ }
+      try { const { data } = await api.post(`/mirrors/${j.mid}/autofix/${j.hid}`); if (data.ok) fixed += 1; } catch (e) { console.warn("autofix failed for", j.mid, e); }
     }));
     toast.success(`${fixed}/${jobs.length} ${t("offline.autofixOk")}`);
     await load();
