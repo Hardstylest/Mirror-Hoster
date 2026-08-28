@@ -218,3 +218,7 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Auto-Hoehe (Embed)**: EmbedPlayer (slim) postet per window.parent.postMessage({type:"gaypower-embed-height", slug, height}) die ideale Hoehe (Tab-Bar + 16:9) an die Elternseite (on load, +400ms, on resize). Dashboard-Embed-Modal bietet neuen "Responsive-Embed (Auto-Hoehe)"-Codeblock: iframe mit id + kleines <script>, das die Hoehe automatisch setzt (kein Scrollbalken, keine feste Hoehe noetig). Keys: dash.responsiveCode/responsiveHint/copyResponsive. Verifiziert: Wrapper-iframe skaliert sich selbst, kein Scroll.
 - **Offline-Label**: VideoPlayer Host-Tabs zeigen bei status=offline jetzt ein rotes "OFFLINE"-Badge (statt nur WifiOff-Icon); online weiterhin gruenes Wifi-Icon. Tab-Bar hat data-testid=player-tabbar (fuer Auto-Hoehe-Messung). Key: player.offlineTag. Verifiziert per Screenshot (DoodStream-Tab rot OFFLINE).
 - ERFORDERT REDEPLOY fuer Production.
+
+## Favicon + Browser-Tab-Titel (2026-06)
+- **Feature**: Statt "Emergent | Fullstack App" jetzt eigenes Favicon + Titel. Generiertes Icon (cyan Mirror/Play) in public/ als favicon.ico, favicon.png(512), favicon-32.png, apple-touch-icon.png(180), logo192/512.png. index.html: <title>NurGay Mirror Stream</title>, favicon-Links, description/theme-color aktualisiert. Titel zusaetzlich dynamisch: SettingsContext setzt document.title = settings.site_name (matcht den im Admin konfigurierten Namen).
+- Verifiziert: alle Icon-URLs 200; Header zeigt Brand. ERFORDERT REDEPLOY fuer Production.

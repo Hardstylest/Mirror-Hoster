@@ -39,6 +39,10 @@ export const SettingsProvider = ({ children }) => {
 
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (settings?.site_name) document.title = settings.site_name;
+  }, [settings?.site_name]);
+
   return (
     <SettingsContext.Provider value={{ settings, reloadSettings: load }}>
       {children}
