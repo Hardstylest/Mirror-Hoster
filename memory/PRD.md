@@ -197,3 +197,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Integration**: integration_expert (JWT-Auth-Playbook) vor der Auth-Änderung konsultiert.
 - Verifiziert: curl (403 bei geschlossen, `/settings` exponiert Flag, zurückgesetzt); Screenshots (Admin-Toggle im Sicherheit-Tab, geschlossene Register-Seite).
 
+
+## Geo-Routing Fix: falsche IP hinter Doppel-Proxy (2026-06)
+- **Bug (nur Production gaypower.org)**: Player (/watch & /embed) zeigte immer USA. Ursache via neuem Diagnose-Endpunkt gefunden: hinter Cloudflare + Rechenzentrums-LB fehlen `cf-ipcountry`/`cf-connecting-ip` (gestrippt), und `get_client_ip` (von rechts indexiert, TRUSTED_PROXY_COUNT=1) wählte die **LB-IP** (`35.186...` = US) statt der Besucher-IP. `X-Forwarded-For` z.B. `104.198.x, 172.69.x(CF), 35.186.x(LB)`.
+- **Fix** (`server.py`): Neue Funktion `get_geo_ip(request)` NUR fürs Geo-Routing – nimmt `cf-connecting-ip`, sonst die **linkeste GLOBALE (öffentliche) IP** aus XFF (= echter Client), sonst `x-real-ip`/peer. `get_embed` nutzt sie jetzt für `geolocate` UND `vpn_check`; `cf-ipcountry` bleibt bevorzugt wenn vorhanden. `get_client_ip` (Security/Rate-Limit) unverändert (rechts-indexiert, anti-spoof).
+- **Diagnose**: Neuer öffentlicher Endpunkt `GET /api/geo-check` – zeigt gesehene Header, gewählte IP, aufgelöstes Land, `behind_cloudflare`. Im Browser auf der Live-Domain aufrufbar.
+- Verifiziert: Unit-Sim (`85.214.132.117, CF, LB` → DE; `cf-connecting-ip` gewinnt → DE) + `/api/geo-check` auf Preview (pickt jetzt linkeste Public-IP statt LB). ERFORDERT REDEPLOY für Production.
+

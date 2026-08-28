@@ -206,6 +206,30 @@ def get_client_ip(request: Request) -> str:
     return request.client.host if request.client else "0.0.0.0"
 
 
+def get_geo_ip(request: Request) -> str:
+    """IP used ONLY for geo-routing (not security). We want the real visitor IP, which
+    sits at the LEFT of X-Forwarded-For. Datacenter/proxy hops (Cloudflare edge, our load
+    balancer) are appended to the right, so `get_client_ip`'s right-indexed value is a
+    proxy IP and geolocates to the datacenter (e.g. US). Here we pick the left-most GLOBAL
+    (public) IP, which is the actual client. cf-connecting-ip wins if present."""
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        for p in [x.strip() for x in xff.split(",") if x.strip()]:
+            try:
+                if ipaddress.ip_address(p).is_global:
+                    return p
+            except ValueError:
+                continue
+    xreal = request.headers.get("x-real-ip")
+    if xreal and xreal.strip():
+        return xreal.strip()
+    return request.client.host if request.client else "0.0.0.0"
+
+
+
 def _is_public_host(url: str) -> bool:
     """SSRF guard: resolve the URL host and reject private/loopback/link-local/reserved
     targets so user-supplied embed URLs cannot probe internal services or cloud metadata."""
@@ -1815,6 +1839,36 @@ def _links_stale(links: List[dict], max_age: int) -> bool:
     return False
 
 
+@api_router.get("/geo-check")
+async def geo_check(request: Request):
+    """Public diagnostic: shows which geo headers actually reach the backend and how the
+    country is resolved. Open directly in the browser on the live domain to debug geo-routing."""
+    h = request.headers
+    cf_cc = (h.get("cf-ipcountry") or "").upper()
+    cf_ip = h.get("cf-connecting-ip")
+    xff = h.get("x-forwarded-for")
+    picked_ip = get_geo_ip(request)
+    if cf_cc and cf_cc not in ("XX", "T1"):
+        source = "cloudflare-header"
+        resolved = {"country_code": cf_cc, "country": cf_cc}
+    else:
+        source = "ip-geolocation-fallback"
+        resolved = await asyncio.to_thread(geolocate, picked_ip)
+    return {
+        "resolved_country": resolved,
+        "source": source,
+        "headers_seen": {
+            "cf-ipcountry": cf_cc or None,
+            "cf-connecting-ip": cf_ip,
+            "x-forwarded-for": xff,
+            "x-real-ip": h.get("x-real-ip"),
+        },
+        "picked_client_ip": picked_ip,
+        "trusted_proxy_count": TRUSTED_PROXY_COUNT,
+        "behind_cloudflare": bool(cf_ip or cf_cc),
+    }
+
+
 @api_router.get("/embed/{slug}")
 async def get_embed(slug: str, request: Request, country: Optional[str] = Query(None)):
     m = await db.mirrors.find_one({"slug": slug})
@@ -1825,9 +1879,10 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
         geo = {"country_code": country.upper(), "country": country.upper()}
         vpn = {"blocked": False, "enabled": False}
     else:
-        ip = get_client_ip(request)
+        ip = get_geo_ip(request)
         # Prefer Cloudflare's authoritative country header (works behind any number of
-        # proxy hops, no external lookup). Fall back to IP geolocation only if absent.
+        # proxy hops, no external lookup). Fall back to IP geolocation of the real
+        # visitor IP (left-most public IP) only if absent.
         cf_cc = (request.headers.get("cf-ipcountry") or "").upper()
         if cf_cc and cf_cc not in ("XX", "T1"):
             geo = {"country_code": cf_cc, "country": cf_cc}
