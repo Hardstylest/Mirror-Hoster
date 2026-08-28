@@ -191,6 +191,10 @@ def now_iso() -> str:
 TRUSTED_PROXY_COUNT = int(os.environ.get("TRUSTED_PROXY_COUNT", "1"))
 
 def get_client_ip(request: Request) -> str:
+    # Behind Cloudflare the real client IP is provided directly and reliably.
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
     xff = request.headers.get("x-forwarded-for")
     if xff:
         parts = [p.strip() for p in xff.split(",") if p.strip()]
@@ -673,7 +677,7 @@ NAME_TO_ISO = {
     "slovakia": "SK", "argentina": "AR", "colombia": "CO", "peru": "PE", "egypt": "EG",
     "pakistan": "PK", "philippines": "PH", "ukraine": "UA", "israel": "IL", "china": "CN",
     "slovenia": "SI", "lithuania": "LT", "latvia": "LV", "estonia": "EE", "luxembourg": "LU",
-    "russian federation": "RU", "russia": "RU", "slovak republic": "SK", "czech republic": "CZ",
+    "russian federation": "RU", "slovak republic": "SK",
     "usa": "US", "uk": "GB", "united states of america": "US", "philipines": "PH",
     "bosnia-herzegovina": "BA", "bosnia herzegovina": "BA",
 }
@@ -1667,7 +1671,13 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
         vpn = {"blocked": False, "enabled": False}
     else:
         ip = get_client_ip(request)
-        geo = await asyncio.to_thread(geolocate, ip)
+        # Prefer Cloudflare's authoritative country header (works behind any number of
+        # proxy hops, no external lookup). Fall back to IP geolocation only if absent.
+        cf_cc = (request.headers.get("cf-ipcountry") or "").upper()
+        if cf_cc and cf_cc not in ("XX", "T1"):
+            geo = {"country_code": cf_cc, "country": cf_cc}
+        else:
+            geo = await asyncio.to_thread(geolocate, ip)
         vpn = await vpn_check(ip)
     cc = geo["country_code"]
 

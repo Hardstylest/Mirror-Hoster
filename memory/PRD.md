@@ -142,6 +142,13 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **SEC-001 (Import-Überlastung)**: Pro-Nutzer-Sperre (`_IMPORT_INFLIGHT`) + Cooldown (`IMPORT_COOLDOWN=8s`) → rascher Zweit-Import gibt 429. Body in `_run_import` ausgelagert, Wrapper hält Lock via try/finally. Batch-Resolve korrigiert: Insert- UND Update-Pfad sammeln `resolve_ids` und starten EINEN gedrosselten `resolve_many`. Verifiziert: 1. Import ok, 2. sofort → 429.
 - **H3 (Dekompressionsbombe)**: `restore_backup_zip` prüft unkomprimierte Gesamtgröße gegen 1 GB → 400 bei Überschreitung. Normale Backups (~0,5 MB) passieren.
 - **H4 (CORS)**: Startup-Warnung bei Wildcard `*` (in Produktion `CORS_ORIGINS` auf exakte Domain setzen). Mechanismus sicher (Wildcard ohne Credentials).
+
+## Bugfix: Land immer USA hinter Cloudflare (Production) (2026-06)
+- **Symptom**: Im Player-Header stand für ALLE Besucher „USA", unabhängig von der echten Herkunft (Prod-Domain via Cloudflare).
+- **Root Cause**: `get_client_ip` parste `X-Forwarded-For` mit fester Proxy-Hop-Annahme (`TRUSTED_PROXY_COUNT`). Hinter Cloudflare + Ingress gibt es mehr Hops → interne IP → US.
+- **Fix** (`server.py`): `get_client_ip` bevorzugt `CF-Connecting-IP`; `get_embed` liest das Land bevorzugt aus `CF-IPCountry` (kein externer Lookup), Geo-Lookup nur noch Fallback wenn Header fehlen/`XX`/`T1`. Doppelte Country-Map-Keys entfernt.
+- Verifiziert lokal: DE→DE, US→US, XX→Fallback (CF-Connecting-IP→Germany), ohne CF normaler XFF-Lookup.
+- **ACHTUNG: Nur in Preview gefixt — User muss neu deployen, damit es live wirkt.**
 - P1: Automatic scraping of hosters' public earn-money pages to auto-refresh tiers (currently admin-managed; scrape verified feasible for Doodstream earn page).
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
 - P2: Email verification + password reset UI; referral/earnings estimate per mirror.
