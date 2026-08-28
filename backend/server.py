@@ -511,7 +511,7 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             # no-referrer, exactly like ListMirror). Do NOT bake in the rotating
             # abuse-domain, which serves X-Frame-Options to server-side probes.
             return {"status": "online" if active else "offline",
-                    "url": embed_url, "title": ires.get("title"), "thumbnail": ires.get("splash_img")}
+                    "url": embed_url, "title": ires.get("title"), "thumbnail": None}
         if provider == "voe":
             key = api_key
             if not key:
@@ -523,7 +523,8 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             online = ires.get("status") == 200
             prefix = voe_embed_prefix(key) or "https://voe.sx/e/"
             return {"status": "online" if online else "offline",
-                    "url": f"{prefix}{code}", "title": ires.get("title"), "thumbnail": None}
+                    "url": f"{prefix}{code}", "title": ires.get("title"),
+                    "thumbnail": f"https://voe.sx/cache/{code}_storyboard_L1.jpg" if online else None}
         if provider == "firestream":
             key = api_key
             if not key:
@@ -2346,6 +2347,32 @@ NEW_HOSTS = [
     },
 ]
 
+async def migrate_voe_thumbnails():
+    """One-time: drop dead DoodStream image URLs (their CDN domains are gone) and add
+    VOE storyboard cover URLs (derived from the file code, no API call needed)."""
+    if await db.settings.find_one({"key": "voe_thumb_migration_v1"}):
+        return
+    voe = await db.hosts.find_one({"api_provider": "voe"})
+    voe_id = voe["id"] if voe else None
+    async for m in db.mirrors.find({}):
+        changed = False
+        for l in m.get("links", []):
+            th = l.get("thumbnail") or ""
+            if "dodoimg.com" in th or "doimg.net" in th:
+                l["thumbnail"] = None
+                changed = True
+            if voe_id and l.get("host_id") == voe_id and l.get("status") == "online":
+                code = extract_file_code(l.get("embed_url", ""))
+                if code:
+                    url = f"https://voe.sx/cache/{code}_storyboard_L1.jpg"
+                    if l.get("thumbnail") != url:
+                        l["thumbnail"] = url
+                        changed = True
+        if changed:
+            await db.mirrors.update_one({"id": m["id"]}, {"$set": {"links": m["links"]}})
+    await db.settings.update_one({"key": "voe_thumb_migration_v1"},
+                                 {"$set": {"key": "voe_thumb_migration_v1", "done": True}}, upsert=True)
+
 async def merge_duplicate_hosts():
     """Fold auto-imported hosts into a canonical host when their domain matches the
     canonical host's primary domain or an alias. Reassigns mirror links, then deletes
@@ -2423,6 +2450,8 @@ async def seed():
     # Merge auto-imported duplicate hosts into a canonical host when their domain matches
     # a canonical host's primary domain or alias (e.g. DoodStream's many mirror domains).
     await merge_duplicate_hosts()
+
+    await migrate_voe_thumbnails()
 
     # Migrate API keys from .env into the DB (one-time) so admins manage them in the dashboard.
     dood_key = os.environ.get("DOODSTREAM_API_KEY")
