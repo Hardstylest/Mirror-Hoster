@@ -1177,6 +1177,17 @@ async def refresh_tiers(inp: RefreshTiersInput, admin: dict = Depends(get_admin_
         results.append(await refresh_host_tiers(h))
     return {"results": results}
 
+@api_router.post("/hosts/{host_id}/remove-alias")
+async def remove_host_alias(host_id: str, inp: dict, admin: dict = Depends(get_admin_user)):
+    alias = (inp.get("alias") or "").strip().lower()
+    if not alias:
+        raise HTTPException(status_code=400, detail="alias required")
+    res = await db.hosts.update_one({"id": host_id}, {"$pull": {"aliases": alias}})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Host not found")
+    updated = await db.hosts.find_one({"id": host_id})
+    return public_host(updated)
+
 @api_router.delete("/hosts/{host_id}")
 async def delete_host(host_id: str, admin: dict = Depends(get_admin_user)):
     await db.hosts.delete_one({"id": host_id})
@@ -1833,9 +1844,21 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
                 pending += 1
         if has_offline:
             offline_mirrors += 1
+    mirror_ids = [m["id"] for m in mirrors]
+    match = {} if user.get("role") == "admin" else {"mirror_id": {"$in": mirror_ids}}
+    agg = await db.views.aggregate([
+        {"$match": match},
+        {"$group": {"_id": {"$toUpper": {"$cond": [{"$eq": [{"$ifNull": ["$country_code", ""]}, ""]}, "XX", "$country_code"]}}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+        {"$limit": 12},
+    ]).to_list(12)
+    top_countries = [{
+        "country_code": (a["_id"] or "XX"),
+        "views": a["n"],
+    } for a in agg]
     return {"total_mirrors": len(mirrors), "total_views": total_views,
             "links_online": online, "links_offline": offline, "links_pending": pending,
-            "offline_mirrors": offline_mirrors}
+            "offline_mirrors": offline_mirrors, "top_countries": top_countries}
 
 @api_router.get("/admin/stats")
 async def admin_stats(admin: dict = Depends(get_admin_user)):

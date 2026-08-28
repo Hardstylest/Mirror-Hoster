@@ -471,6 +471,15 @@ export default function AdminDashboard() {
     load();
   };
 
+  const removeAlias = async (hostId, alias) => {
+    if (!window.confirm(t("admin.host.removeAliasConfirm").replace("{alias}", alias))) return;
+    try {
+      await api.post(`/hosts/${hostId}/remove-alias`, { alias });
+      toast.success(t("admin.host.aliasRemoved"));
+      load();
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+  };
+
   const refreshTiers = async () => {
     setRefreshingTiers(true);
     try {
@@ -609,6 +618,18 @@ export default function AdminDashboard() {
                       <button onClick={() => deleteHost(h.id)} data-testid={`delete-host-${h.id}`} className="p-2 rounded-md text-muted-foreground hover:text-offline hover:bg-secondary transition-colors"><Trash2 size={17} /></button>
                     </div>
                   </div>
+                  {h.aliases && h.aliases.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-3" data-testid={`aliases-${h.id}`}>
+                      <span className="text-xs text-muted-foreground mr-1">{t("admin.host.aliasesLabel")} ({h.aliases.length}):</span>
+                      {h.aliases.map((a) => (
+                        <span key={a} className="inline-flex items-center gap-1 text-xs bg-surface border border-border rounded-full pl-2.5 pr-1 py-1 font-mono">
+                          {a}
+                          <button onClick={() => removeAlias(h.id, a)} data-testid={`remove-alias-${h.id}-${a}`} title={t("admin.host.removeAlias")}
+                            className="w-4 h-4 inline-flex items-center justify-center rounded-full text-muted-foreground hover:text-offline hover:bg-secondary transition-colors"><X size={11} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2 mt-4">
                     {h.tiers.map((t, i) => (
                       <div key={i} className="text-xs bg-surface border border-border rounded px-2.5 py-1.5">

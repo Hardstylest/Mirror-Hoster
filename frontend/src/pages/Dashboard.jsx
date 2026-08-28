@@ -6,7 +6,7 @@ import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
 import {
   Film, Eye, Wifi, WifiOff, Plus, Copy, BarChart3, Pencil, Trash2, RefreshCw, ExternalLink, Clock,
-  Code2, Search, ChevronLeft, ChevronRight, X, DownloadCloud, CheckCircle2, AlertTriangle,
+  Code2, Search, ChevronLeft, ChevronRight, X, DownloadCloud, CheckCircle2, AlertTriangle, Globe2,
 } from "lucide-react";
 
 function EmbedModal({ mirror, onClose }) {
@@ -139,6 +139,41 @@ function ImportModal({ onClose, onImported }) {
 }
 
 
+const flagEmoji = (cc) => {
+  if (!cc || cc.length !== 2 || !/^[a-zA-Z]{2}$/.test(cc)) return null;
+  const base = 0x1f1e6;
+  return String.fromCodePoint(...[...cc.toUpperCase()].map((c) => base + c.charCodeAt(0) - 65));
+};
+const countryName = (cc, lang) => {
+  try { return new Intl.DisplayNames([lang || "de"], { type: "region" }).of((cc || "").toUpperCase()) || cc; }
+  catch { return cc; }
+};
+
+const CountryAnalytics = ({ data, lang, t }) => {
+  const max = Math.max(1, ...data.map((c) => c.views));
+  return (
+    <div className="bg-card border border-border rounded-lg p-6 mb-8" data-testid="country-analytics">
+      <h3 className="font-display font-bold text-lg mb-4 flex items-center gap-2"><Globe2 size={18} className="text-brand" /> {t("dash.countries.title")}</h3>
+      {data.length === 0 ? (
+        <p className="text-muted-foreground text-sm" data-testid="country-analytics-empty">{t("dash.countries.empty")}</p>
+      ) : (
+        <div className="space-y-2.5">
+          {data.map((c) => (
+            <div key={c.country_code} className="flex items-center gap-3" data-testid={`country-row-${c.country_code}`}>
+              <span className="w-6 text-base leading-none text-center shrink-0" aria-hidden>{flagEmoji(c.country_code) || "🌐"}</span>
+              <span className="w-40 truncate text-sm shrink-0" title={c.country_code === "XX" ? t("dash.countries.unknown") : countryName(c.country_code, lang)}>{c.country_code === "XX" ? t("dash.countries.unknown") : countryName(c.country_code, lang)}</span>
+              <div className="flex-1 h-2.5 rounded-full bg-surface overflow-hidden">
+                <div className="h-full rounded-full bg-brand" style={{ width: `${(c.views / max) * 100}%` }} />
+              </div>
+              <span className="w-16 text-right text-sm font-mono tabular-nums shrink-0">{c.views}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const StatCard = ({ icon: Icon, label, value, tone = "brand" }) => (
   <div className="bg-card border border-border rounded-lg p-5">
     <div className="flex items-center justify-between">
@@ -165,7 +200,7 @@ const StatusBadge = ({ status }) => {
 };
 
 export default function Dashboard() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [mirrors, setMirrors] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -266,6 +301,8 @@ export default function Dashboard() {
             <StatCard icon={WifiOff} label={t("dash.stat.offlineLinks")} value={stats.links_offline} tone="offline" />
           </div>
         )}
+
+        {stats && <CountryAnalytics data={stats.top_countries || []} lang={lang} t={t} />}
 
         {loading ? (
           <p className="text-muted-foreground font-mono">{t("common.loading")}</p>
