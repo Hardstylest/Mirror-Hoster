@@ -204,3 +204,9 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Diagnose**: Neuer öffentlicher Endpunkt `GET /api/geo-check` – zeigt gesehene Header, gewählte IP, aufgelöstes Land, `behind_cloudflare`. Im Browser auf der Live-Domain aufrufbar.
 - Verifiziert: Unit-Sim (`85.214.132.117, CF, LB` → DE; `cf-connecting-ip` gewinnt → DE) + `/api/geo-check` auf Preview (pickt jetzt linkeste Public-IP statt LB). ERFORDERT REDEPLOY für Production.
 
+
+## Edit-Button auf /watch (nur Berechtigte) (2026-06)
+- **Feature**: Auf der /watch-Vollansicht erscheint ein "Bearbeiten"-Button im Header, der zu `/dashboard/edit/{id}` fuehrt. So kann man beim Ansehen eigener Mirrors offline Streams (Host-Tabs zeigen Online/Offline via WLAN-Icon) direkt im Editor loeschen/ersetzen.
+- **Backend** (`server.py`): Neuer Helper `get_optional_user(request)` (Auth ohne 401). `get_embed` liefert jetzt `id` und `can_edit` (True nur fuer Admin oder Mirror-Eigentuemer `created_by`).
+- **Frontend** (`EmbedPlayer.jsx`): Button nur bei `data.can_edit` (full-Mode). Keys: `player.edit`.
+- Verifiziert: curl (anon can_edit=False, admin can_edit=True) + Screenshot (Button sichtbar). ERFORDERT REDEPLOY fuer Production.

@@ -102,6 +102,13 @@ async def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
+async def get_optional_user(request: Request):
+    try:
+        return await get_current_user(request)
+    except HTTPException:
+        return None
+
+
 
 # ---------------------------------------------------------------------------
 # Models
@@ -1930,7 +1937,10 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
         "timestamp": now_iso(),
     })
 
+    viewer = await get_optional_user(request)
     return {
+        "id": m["id"],
+        "can_edit": bool(viewer and (viewer.get("role") == "admin" or m.get("created_by") == viewer.get("id"))),
         "title": m["title"],
         "description": m.get("description", ""),
         "slug": slug,

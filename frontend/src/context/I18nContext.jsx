@@ -261,6 +261,7 @@ const translations = {
     "admin.settings.save": "Save settings",
     // player
     "player.bestFirst": "Best-paying host first",
+    "player.edit": "Edit",
     "player.poweredBy": "Powered by",
     "player.loading": "Loading player…",
     "player.notFound": "Mirror not found.",
@@ -526,6 +527,7 @@ const translations = {
     "admin.settings.saved": "Einstellungen gespeichert",
     "admin.settings.save": "Einstellungen speichern",
     "player.bestFirst": "Bestbezahlter Anbieter zuerst",
+    "player.edit": "Bearbeiten",
     "player.poweredBy": "Bereitgestellt von",
     "player.loading": "Player wird geladen…",
     "player.notFound": "Mirror nicht gefunden.",

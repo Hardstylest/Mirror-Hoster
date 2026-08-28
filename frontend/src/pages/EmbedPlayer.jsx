@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import api from "../lib/api";
 import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
@@ -8,7 +8,7 @@ import { LanguageToggle } from "../components/LanguageToggle";
 import { AdSlot } from "../components/AdSlot";
 import { AdblockGate } from "../components/AdblockGate";
 import { VideoPlayer } from "../components/VideoPlayer";
-import { Film, Globe2, TrendingUp, ShieldAlert } from "lucide-react";
+import { Film, Globe2, TrendingUp, ShieldAlert, Pencil } from "lucide-react";
 
 const flagEmoji = (cc) => {
   if (!cc || cc.length !== 2 || !/^[a-zA-Z]{2}$/.test(cc)) return null;
@@ -81,6 +81,12 @@ export default function EmbedPlayer({ full = false }) {
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand/10 border border-brand/30 text-brand">
                 <TrendingUp size={14} /> {t("player.bestFirst")}
               </span>
+              {data.can_edit && (
+                <Link to={`/dashboard/edit/${data.id}`} data-testid="watch-edit-button"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-card border border-border hover:border-brand hover:text-brand transition-colors">
+                  <Pencil size={14} /> {t("player.edit")}
+                </Link>
+              )}
               <LanguageToggle />
               <ThemeToggle />
             </div>
