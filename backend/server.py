@@ -1203,6 +1203,19 @@ async def list_mirrors(user: dict = Depends(get_current_user)):
     mirrors = await db.mirrors.find(query).sort("created_at", -1).to_list(1000)
     return [public_mirror(m) for m in mirrors]
 
+@api_router.get("/mirrors/check-title")
+async def check_title(title: str, user: dict = Depends(get_current_user)):
+    """Warn (non-blocking) when a mirror with the same title already exists so the
+    operator can quickly compare content (same titles across studios are common)."""
+    t = (title or "").strip()
+    if not t:
+        return {"matches": []}
+    q = {"title": {"$regex": f"^{re.escape(t)}$", "$options": "i"}}
+    if user.get("role") != "admin":
+        q["created_by"] = user["id"]
+    docs = await db.mirrors.find(q, {"id": 1, "slug": 1, "title": 1}).to_list(20)
+    return {"matches": [{"id": d["id"], "slug": d.get("slug"), "title": d.get("title")} for d in docs]}
+
 @api_router.post("/mirrors")
 async def create_mirror(inp: MirrorInput, user: dict = Depends(get_current_user)):
     links = await enrich_host_links([l.model_dump() for l in inp.links])
@@ -1543,6 +1556,96 @@ async def bulk_delete_mirrors(inp: BulkDeleteInput, user: dict = Depends(get_cur
     res = await db.mirrors.delete_many(q)
     await db.views.delete_many({"mirror_id": {"$in": inp.ids}})
     return {"deleted": res.deleted_count}
+
+@api_router.post("/admin/mirrors/reassign-legacy")
+async def reassign_legacy_links(inp: dict, admin: dict = Depends(get_admin_user)):
+    """Retroactively fix links that point to an inactive or deleted host: match the
+    link's URL domain to an ACTIVE host (by domain/alias, else by provider name) and
+    reassign it, learning the domain as an alias. preview=true only reports impact."""
+    preview = bool(inp.get("preview", True))
+    hosts = await db.hosts.find({}).to_list(1000)
+    active = [h for h in hosts if h.get("is_active")]
+    active_ids = {h["id"] for h in active}
+
+    def _norm(s):
+        return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+    def _m(a, b):
+        return a and b and (a == b or a.endswith("." + b) or b.endswith("." + a))
+
+    def match_domain(domain):
+        d = (domain or "").lower()
+        if not d:
+            return None
+        for h in active:
+            cands = [(h.get("domain") or "").lower()] + [str(x).lower() for x in (h.get("aliases") or [])]
+            if any(_m(d, c) for c in cands if c):
+                return h
+        return None
+
+    def match_name(domain):
+        ndom = _norm(domain)
+        nroot = _norm((domain or "").split(".")[0])
+        if len(nroot) < 3:
+            return None
+        for h in active:
+            nh = _norm(h.get("name"))
+            if len(nh) >= 3 and (nh == nroot or nh in ndom):
+                return h
+        return None
+
+    affected = reassigned = 0
+    learned = {}
+    by_host = {}
+    unresolved = {}
+    aliases_to_add = {}  # host_id -> set(domains)
+    updates = []  # (mirror_id, new_links)
+
+    async for m in db.mirrors.find({}):
+        links = m.get("links", [])
+        changed = False
+        for l in links:
+            if l.get("host_id") in active_ids:
+                continue
+            domain = _lm_domain(l.get("embed_url", ""))
+            h = match_domain(domain) or match_name(domain)
+            if not h:
+                unresolved[domain] = unresolved.get(domain, 0) + 1
+                continue
+            l["host_id"] = h["id"]
+            changed = True
+            reassigned += 1
+            by_host[h["name"]] = by_host.get(h["name"], 0) + 1
+            if domain and domain != (h.get("domain") or "").lower() and domain not in [str(x).lower() for x in (h.get("aliases") or [])]:
+                aliases_to_add.setdefault(h["id"], set()).add(domain)
+                learned[domain] = h["name"]
+        if changed:
+            affected += 1
+            # de-duplicate links that now share the same host_id (prefer online)
+            seen = {}
+            for l in links:
+                hid = l["host_id"]
+                if hid not in seen:
+                    seen[hid] = l
+                elif l.get("status") == "online" and seen[hid].get("status") != "online":
+                    seen[hid] = l
+            updates.append((m["id"], list(seen.values())))
+
+    result = {
+        "preview": preview,
+        "affected_mirrors": affected,
+        "links_reassigned": reassigned,
+        "by_host": by_host,
+        "learned_aliases": [{"domain": d, "host": hn} for d, hn in learned.items()],
+        "unresolved": [{"domain": d, "count": c} for d, c in sorted(unresolved.items(), key=lambda x: -x[1])],
+    }
+    if preview:
+        return result
+    for hid, doms in aliases_to_add.items():
+        await db.hosts.update_one({"id": hid}, {"$addToSet": {"aliases": {"$each": list(doms)}}})
+    for mid, new_links in updates:
+        await db.mirrors.update_one({"id": mid}, {"$set": {"links": new_links}})
+    return result
 
 @api_router.post("/admin/mirrors/cleanup")
 async def cleanup_mirrors(inp: CleanupInput, admin: dict = Depends(get_admin_user)):

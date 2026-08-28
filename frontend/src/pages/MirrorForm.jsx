@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import api, { faviconUrl, formatApiError } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
-import { ArrowLeft, Save, WifiOff, Trash2 } from "lucide-react";
+import { ArrowLeft, Save, WifiOff, Trash2, ExternalLink, AlertTriangle } from "lucide-react";
 
 export default function MirrorForm() {
   const { id } = useParams();
@@ -14,6 +14,7 @@ export default function MirrorForm() {
   const [hosts, setHosts] = useState([]);
   const [extraHosts, setExtraHosts] = useState([]); // links whose host is inactive/legacy/deleted
   const [title, setTitle] = useState("");
+  const [titleMatches, setTitleMatches] = useState([]);
   const [description, setDescription] = useState("");
   const [links, setLinks] = useState({}); // host_id -> embed_url
   const [statusMap, setStatusMap] = useState({}); // host_id -> status
@@ -55,6 +56,18 @@ export default function MirrorForm() {
       setLoading(false);
     })();
   }, [id, editing, t]);
+
+  useEffect(() => {
+    if (editing) return;
+    const q = title.trim();
+    if (q.length < 2) { setTitleMatches([]); return; }
+    const timer = setTimeout(() => {
+      api.get(`/mirrors/check-title`, { params: { title: q } })
+        .then((r) => setTitleMatches(r.data.matches || []))
+        .catch(() => setTitleMatches([]));
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [title, editing]);
 
   const removeLegacy = (hid) => {
     setLinks((p) => { const n = { ...p }; delete n[hid]; return n; });
@@ -112,6 +125,25 @@ export default function MirrorForm() {
               <input data-testid="mirror-title-input" required value={title} onChange={(e) => setTitle(e.target.value)}
                 placeholder={t("form.titlePlaceholder")}
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              {!editing && titleMatches.length > 0 && (
+                <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3" data-testid="title-duplicate-warning">
+                  <p className="flex items-center gap-2 text-sm text-amber-500 font-medium">
+                    <AlertTriangle size={15} /> {t("form.titleExists").replace("{n}", titleMatches.length)}
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {titleMatches.map((m) => (
+                      <li key={m.id} className="flex items-center gap-2 text-sm">
+                        <span className="truncate">{m.title}</span>
+                        <a href={`/watch/${m.slug}`} target="_blank" rel="noreferrer" data-testid={`title-match-watch-${m.slug}`}
+                          className="inline-flex items-center gap-1 text-brand hover:underline shrink-0"><ExternalLink size={12} /> Watch</a>
+                        <a href={`/embed/${m.slug}`} target="_blank" rel="noreferrer" data-testid={`title-match-embed-${m.slug}`}
+                          className="inline-flex items-center gap-1 text-muted-foreground hover:text-brand shrink-0 font-mono text-xs">/embed/{m.slug}</a>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs text-muted-foreground">{t("form.titleExistsHint")}</p>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-sm text-muted-foreground">{t("form.description")} <span className="opacity-60">({t("common.optional")})</span></label>

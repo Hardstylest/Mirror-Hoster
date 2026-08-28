@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import api, { faviconUrl } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
+import { useAuth } from "../context/AuthContext";
+import { MirrorCleanupPanel, LegacyReassignPanel } from "../components/AdminMirrorTools";
 import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench, History, Trash2 } from "lucide-react";
 
 const fmtDate = (iso) => {
@@ -17,8 +19,11 @@ const isAutofixSupported = (h) => h && (AUTOFIX_PROVIDERS.includes(h.provider) |
 
 export default function OfflineStreams() {
   const { t } = useI18n();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [mirrors, setMirrors] = useState([]);
   const [hostMap, setHostMap] = useState({});
+  const [hosts, setHosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(null);
   const [fixing, setFixing] = useState(null);
@@ -31,6 +36,7 @@ export default function OfflineStreams() {
     try {
       const [m, h, fl] = await Promise.all([api.get("/mirrors"), api.get("/hosts"), api.get("/fix-logs")]);
       setMirrors(m.data);
+      setHosts(h.data);
       const pm = {};
       h.data.forEach((x) => { pm[x.id] = { provider: x.api_provider, has_login: x.has_login }; });
       setHostMap(pm);
@@ -138,6 +144,13 @@ export default function OfflineStreams() {
             </div>
           )}
         </div>
+
+        {isAdmin && (
+          <div className="mb-8" data-testid="admin-maintenance">
+            <LegacyReassignPanel />
+            <MirrorCleanupPanel hosts={hosts} />
+          </div>
+        )}
 
         {loading ? (
           <p className="text-muted-foreground font-mono">{t("common.loading")}</p>

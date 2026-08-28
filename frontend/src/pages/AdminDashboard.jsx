@@ -298,35 +298,6 @@ export default function AdminDashboard() {
   const [userModal, setUserModal] = useState(null); // {mode:'create'} | {mode:'password', user}
   const [userSearch, setUserSearch] = useState("");
   const [loginAlerts, setLoginAlerts] = useState([]);
-  const [cleanupHost, setCleanupHost] = useState("");
-  const [cleanupOffline, setCleanupOffline] = useState(true);
-  const [cleanupPreview, setCleanupPreview] = useState(null);
-  const [cleanupBusy, setCleanupBusy] = useState(false);
-
-  const runCleanup = async (preview) => {
-    setCleanupBusy(true);
-    try {
-      const { data } = await api.post("/admin/mirrors/cleanup", {
-        host_id: cleanupHost || null, offline_only: cleanupOffline, preview,
-      });
-      if (preview) setCleanupPreview(data);
-      else {
-        toast.success(lang === "de"
-          ? `${data.links_removed} Link(s) entfernt · ${data.mirrors_deleted} Mirror(s) gelöscht`
-          : `${data.links_removed} link(s) removed · ${data.mirrors_deleted} mirror(s) deleted`);
-        setCleanupPreview(null);
-      }
-    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Fehler"); }
-    setCleanupBusy(false);
-  };
-  const doCleanup = async () => {
-    const p = cleanupPreview;
-    const msg = lang === "de"
-      ? `${p.links_removed} Hoster-Link(s) aus ${p.affected_mirrors} Mirror(s) entfernen? Davon werden ${p.mirrors_deleted} Mirror(s) komplett gelöscht (0 Links übrig). Fortfahren?`
-      : `Remove ${p.links_removed} host link(s) from ${p.affected_mirrors} mirror(s)? ${p.mirrors_deleted} mirror(s) will be fully deleted (0 links left). Continue?`;
-    if (!window.confirm(msg)) return;
-    await runCleanup(false);
-  };
   const [adminSettings, setAdminSettings] = useState({});
   const [backupBusy, setBackupBusy] = useState("");
   const [restorePw, setRestorePw] = useState("");
@@ -566,40 +537,6 @@ export default function AdminDashboard() {
               <button onClick={() => setEditor({ new: true })} data-testid="add-host-button" className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors"><Plus size={18} /> {t("admin.addHost")}</button>
             </div>
 
-            <div className="bg-card border border-border rounded-lg p-5 mb-6" data-testid="cleanup-panel">
-              <h3 className="font-display font-bold text-lg mb-1 flex items-center gap-2"><Eraser size={18} className="text-brand" /> {lang === "de" ? "Mirror-Bereinigung" : "Mirror cleanup"}</h3>
-              <p className="text-sm text-muted-foreground mb-4">{lang === "de" ? "Entfernt Hoster-Links aus allen Mirrors (z.B. wenn ein Hoster offline geht). Mirrors ohne verbleibende Links werden gelöscht." : "Removes host links from all mirrors (e.g. when a host goes down). Mirrors with no links left are deleted."}</p>
-              <div className="flex flex-wrap gap-4 items-end">
-                <div>
-                  <label className="text-sm text-muted-foreground block">{lang === "de" ? "Hoster" : "Host"}</label>
-                  <select value={cleanupHost} data-testid="cleanup-host-select"
-                    onChange={(e) => { const v = e.target.value; setCleanupHost(v); if (!v) setCleanupOffline(true); setCleanupPreview(null); }}
-                    className="mt-1 bg-surface border border-border rounded-md px-3 py-2 text-sm focus:border-brand outline-none">
-                    <option value="">{lang === "de" ? "Alle Hoster" : "All hosts"}</option>
-                    {hosts.map((h) => <option key={h.id} value={h.id}>{h.name} ({h.domain})</option>)}
-                  </select>
-                </div>
-                <label className={`inline-flex items-center gap-2 text-sm ${!cleanupHost ? "opacity-50" : "cursor-pointer"}`}>
-                  <input type="checkbox" disabled={!cleanupHost} checked={cleanupOffline} data-testid="cleanup-offline-toggle"
-                    onChange={(e) => { setCleanupOffline(e.target.checked); setCleanupPreview(null); }} className="w-4 h-4 accent-brand" />
-                  {lang === "de" ? "Nur Offline-Links" : "Offline links only"}
-                </label>
-                <button onClick={() => runCleanup(true)} disabled={cleanupBusy} data-testid="cleanup-preview-button"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border hover:border-brand hover:text-brand disabled:opacity-60 transition-colors">
-                  <Search size={16} /> {lang === "de" ? "Vorschau" : "Preview"}
-                </button>
-              </div>
-              {cleanupPreview && (
-                <div className="mt-4 rounded-md border border-border bg-surface/50 p-4 text-sm space-y-3" data-testid="cleanup-preview">
-                  <p>{lang === "de"
-                    ? `Betroffen: ${cleanupPreview.affected_mirrors} Mirror(s) · ${cleanupPreview.links_removed} Link(s) werden entfernt · ${cleanupPreview.mirrors_deleted} Mirror(s) werden komplett gelöscht`
-                    : `Affected: ${cleanupPreview.affected_mirrors} mirror(s) · ${cleanupPreview.links_removed} link(s) removed · ${cleanupPreview.mirrors_deleted} mirror(s) fully deleted`}</p>
-                  {cleanupPreview.affected_mirrors > 0
-                    ? <button onClick={doCleanup} disabled={cleanupBusy} data-testid="cleanup-run-button" className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-offline text-white font-semibold hover:opacity-90 disabled:opacity-60 transition-opacity"><Trash2 size={16} /> {lang === "de" ? "Jetzt bereinigen" : "Clean up now"}</button>
-                    : <p className="text-muted-foreground">{lang === "de" ? "Nichts zu bereinigen." : "Nothing to clean up."}</p>}
-                </div>
-              )}
-            </div>
             <div className="space-y-3">
               {hosts.map((h) => (
                 <div key={h.id} className="bg-card border border-border rounded-lg p-5">
