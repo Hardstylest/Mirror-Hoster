@@ -37,6 +37,16 @@ export default function EmbedPlayer({ full = false }) {
     api.post(`/embed/${slug}/host-view/${host_id}`).catch(() => {});
   };
 
+  // Embed (slim) mode fills the iframe exactly and must not scroll (like ListMirror).
+  useEffect(() => {
+    if (full) return;
+    const html = document.documentElement, body = document.body;
+    const prev = { hH: html.style.height, bH: body.style.height, bM: body.style.margin, hO: html.style.overflow, bO: body.style.overflow };
+    html.style.height = "100%"; body.style.height = "100%"; body.style.margin = "0";
+    html.style.overflow = "hidden"; body.style.overflow = "hidden";
+    return () => { html.style.height = prev.hH; body.style.height = prev.bH; body.style.margin = prev.bM; html.style.overflow = prev.hO; body.style.overflow = prev.bO; };
+  }, [full]);
+
   if (error) return (
     <div className="min-h-screen flex items-center justify-center text-muted-foreground">{t("player.notFound")}</div>
   );
@@ -58,9 +68,9 @@ export default function EmbedPlayer({ full = false }) {
   );
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className={full ? "min-h-screen bg-background flex items-center justify-center p-4" : "h-screen w-full bg-background overflow-hidden"}>
       <AdblockGate mode={settings.antiadblock_mode || (settings.antiadblock_enabled ? "block" : "off")} />
-      <div className="w-full max-w-4xl">
+      <div className={full ? "w-full max-w-4xl" : "w-full h-full"}>
         {full && (
           <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
             <div className="flex items-center gap-3 min-w-0">
@@ -95,7 +105,7 @@ export default function EmbedPlayer({ full = false }) {
 
         {full && <AdSlot html={settings.ad_player_top} testid="ad-player-top" className="flex justify-center mb-4" />}
 
-        <VideoPlayer hosts={data.hosts} onHostView={recordHostView} poster={data.thumbnail}
+        <VideoPlayer hosts={data.hosts} onHostView={recordHostView} poster={data.thumbnail} fill={!full}
           preroll={{ enabled: settings.ad_preroll_enabled, html: settings.ad_preroll, seconds: settings.ad_preroll_seconds }} />
 
         {full && <AdSlot html={settings.ad_player_bottom} testid="ad-player-bottom" className="flex justify-center mt-4" />}

@@ -210,3 +210,7 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Backend** (`server.py`): Neuer Helper `get_optional_user(request)` (Auth ohne 401). `get_embed` liefert jetzt `id` und `can_edit` (True nur fuer Admin oder Mirror-Eigentuemer `created_by`).
 - **Frontend** (`EmbedPlayer.jsx`): Button nur bei `data.can_edit` (full-Mode). Keys: `player.edit`.
 - Verifiziert: curl (anon can_edit=False, admin can_edit=True) + Screenshot (Button sichtbar). ERFORDERT REDEPLOY fuer Production.
+
+## Embed-Player Scrollbalken-Fix (iframe fuellt) (2026-06)
+- **Bug (Production, im iframe auf Fremdseite)**: /embed hatte rechts einen Scrollbalken. Ursache: Slim-Embed nutzte `min-h-screen`+`p-4` und der Player erzwang festes 16:9 (`aspect-video`) -> Inhalt hoeher als iframe -> Overflow. ListMirror laesst den Player die iframe-Hoehe fuellen.
+- **Fix**: `VideoPlayer` bekam `fill`-Prop: bei fill root=`h-full flex flex-col`, Tab-Bar `shrink-0`, Player-Frame `flex-1 min-h-0` statt `aspect-video`. `EmbedPlayer` slim-Mode: Container `h-screen w-full overflow-hidden` ohne Padding/Centering, inner `w-full h-full`, `fill={!full}`; Effekt setzt html/body height100

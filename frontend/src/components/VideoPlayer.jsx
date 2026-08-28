@@ -4,7 +4,7 @@ import { useI18n } from "../context/I18nContext";
 import { AdSlot } from "./AdSlot";
 import { Wifi, WifiOff, Play, SkipForward } from "lucide-react";
 
-export const VideoPlayer = ({ hosts, onHostView, poster, preroll }) => {
+export const VideoPlayer = ({ hosts, onHostView, poster, preroll, fill = false }) => {
   const { t } = useI18n();
   const [active, setActive] = useState(0);
   const [started, setStarted] = useState(false);
@@ -63,9 +63,9 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll }) => {
   };
 
   return (
-    <div className="w-full">
+    <div className={fill ? "w-full h-full flex flex-col min-h-0" : "w-full"}>
       {/* Browser-style tab bar */}
-      <div className="flex items-end gap-1 overflow-x-auto bg-surface rounded-t-lg border border-b-0 border-border px-2 pt-2">
+      <div className="flex items-end gap-1 overflow-x-auto bg-surface rounded-t-lg border border-b-0 border-border px-2 pt-2 shrink-0">
         {hosts.map((h, i) => {
           const isActive = i === active;
           return (
@@ -100,7 +100,7 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll }) => {
       </div>
 
       {/* Player frame */}
-      <div className="relative aspect-video w-full bg-black border border-border rounded-b-lg overflow-hidden">
+      <div className={`relative w-full bg-black border border-border rounded-b-lg overflow-hidden ${fill ? "flex-1 min-h-0" : "aspect-video"}`}>
         {current.status === "offline" ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
             <WifiOff size={40} className="text-offline" />
