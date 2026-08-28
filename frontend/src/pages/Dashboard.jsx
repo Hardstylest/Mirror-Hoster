@@ -12,6 +12,7 @@ import {
 function EmbedModal({ mirror, onClose }) {
   const { t } = useI18n();
   const link = `${window.location.origin}/embed/${mirror.slug}`;
+  const watch = `${window.location.origin}/watch/${mirror.slug}`;
   const iframe = `<iframe src="${link}" width="100%" height="520" frameborder="0" allowfullscreen></iframe>`;
   const copy = (text) => { navigator.clipboard.writeText(text); toast.success(t("dash.codeCopied")); };
   return (
@@ -24,9 +25,18 @@ function EmbedModal({ mirror, onClose }) {
         <div className="p-5 space-y-5">
           <div>
             <label className="text-sm text-muted-foreground">{t("dash.directLink")}</label>
+            <p className="text-xs text-muted-foreground/70 mt-0.5">{t("dash.embedHint")}</p>
             <div className="mt-1 flex gap-2">
               <input readOnly value={link} data-testid="embed-direct-link" className="flex-1 bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono" />
               <button onClick={() => copy(link)} className="px-3 rounded-md border border-border hover:border-brand transition-colors"><Copy size={16} /></button>
+            </div>
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground">{t("dash.watchLink")}</label>
+            <p className="text-xs text-muted-foreground/70 mt-0.5">{t("dash.watchHint")}</p>
+            <div className="mt-1 flex gap-2">
+              <input readOnly value={watch} data-testid="embed-watch-link" className="flex-1 bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono" />
+              <button onClick={() => copy(watch)} data-testid="copy-watch-link-button" className="px-3 rounded-md border border-border hover:border-brand transition-colors"><Copy size={16} /></button>
             </div>
           </div>
           <div>

@@ -12,6 +12,7 @@ export default function MirrorForm() {
   const navigate = useNavigate();
   const editing = Boolean(id);
   const [hosts, setHosts] = useState([]);
+  const [extraHosts, setExtraHosts] = useState([]); // links whose host is inactive/legacy/deleted
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [links, setLinks] = useState({}); // host_id -> embed_url
@@ -22,7 +23,8 @@ export default function MirrorForm() {
   useEffect(() => {
     (async () => {
       const h = await api.get("/hosts");
-      const active = h.data.filter((x) => x.is_active);
+      const all = h.data;
+      const active = all.filter((x) => x.is_active);
       setHosts(active);
       if (editing) {
         const m = await api.get(`/mirrors/${id}`);
@@ -30,13 +32,29 @@ export default function MirrorForm() {
         setDescription(m.data.description || "");
         const map = {};
         const smap = {};
-        m.data.links.forEach((l) => { map[l.host_id] = l.embed_url; smap[l.host_id] = l.status; });
+        (m.data.links || []).forEach((l) => { map[l.host_id] = l.embed_url; smap[l.host_id] = l.status; });
         setLinks(map);
         setStatusMap(smap);
+        // Any link whose host is not in the active list (inactive / auto-imported /
+        // deleted) must still be editable, otherwise it is invisible even though the
+        // player keeps showing it. Build fallback rows for those.
+        const activeIds = new Set(active.map((x) => x.id));
+        const byId = Object.fromEntries(all.map((x) => [x.id, x]));
+        const extras = [];
+        (m.data.links || []).forEach((l) => {
+          if (activeIds.has(l.host_id)) return;
+          const known = byId[l.host_id];
+          let domain = "";
+          try { domain = new URL(l.embed_url).hostname.replace(/^www\./, ""); } catch { domain = ""; }
+          extras.push(known
+            ? { ...known, legacy: true, missing: false }
+            : { id: l.host_id, name: domain || t("form.unknownHost"), domain, legacy: true, missing: true });
+        });
+        setExtraHosts(extras);
       }
       setLoading(false);
     })();
-  }, [id, editing]);
+  }, [id, editing, t]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -85,13 +103,19 @@ export default function MirrorForm() {
 
             <div className="space-y-4">
               <label className="text-sm text-muted-foreground">{t("form.hostLinks")}</label>
-              {hosts.map((h) => {
+              {[...hosts, ...extraHosts].map((h) => {
                 const isOffline = statusMap[h.id] === "offline";
+                const isLegacy = Boolean(h.legacy);
                 return (
                 <div key={h.id} className="flex items-start gap-3" data-testid={`host-row-${h.name.toLowerCase()}`}>
                   <div className="flex items-center gap-2 w-40 shrink-0 pt-2.5">
                     <img src={faviconUrl(h.domain)} alt="" width={18} height={18} onError={(e) => (e.currentTarget.style.display = "none")} />
                     <span className="text-sm font-medium truncate">{h.name}</span>
+                    {isLegacy && (
+                      <span data-testid={`legacy-tag-${h.name.toLowerCase()}`} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-500 border border-amber-500/30">
+                        {h.missing ? t("form.unmanagedHost") : t("form.inactiveHost")}
+                      </span>
+                    )}
                     {isOffline && (
                       <span data-testid={`offline-tag-${h.name.toLowerCase()}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-offline/10 text-offline border border-offline/30">
                         <WifiOff size={10} /> {t("form.offlineHost")}
@@ -106,6 +130,7 @@ export default function MirrorForm() {
                       placeholder={`https://${h.domain}/e/xxxxx`}
                       className={`w-full bg-surface border rounded-md px-4 py-2.5 font-mono text-sm outline-none transition-colors focus:ring-1 ${isOffline ? "border-offline/50 focus:border-offline focus:ring-offline" : "border-border focus:border-brand focus:ring-brand"}`} />
                     {isOffline && <p className="text-xs text-offline mt-1">{t("form.offlineHint")}</p>}
+                    {isLegacy && <p className="text-xs text-amber-500 mt-1">{t("form.legacyHint")}</p>}
                   </div>
                 </div>
               );})}

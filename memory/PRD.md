@@ -162,3 +162,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
   - `/embed/:slug` und `/e/:slug` → abgespeckt (Prop `full=false`, Default).
   - Prop `full` steuert Header, Banner-Ads (`ad_player_top`/`ad_player_bottom`), Beschreibung, Powered-by. Pre-Roll (im VideoPlayer) und AdblockGate bleiben in BEIDEN Varianten aktiv (Nutzerwunsch).
 - Verifiziert per Screenshot: `/embed/` = nur Player+Tabs; `/watch/` = voll.
+
+
+## Editor zeigt nun ALLE Links + iframe/Watch-Kopierbutton (2026-06)
+- **Bug**: Nach ListMirror-Import waren Links, deren Hoster inaktiv/auto-importiert/gelöscht ist (z.B. Doodstream-Mirror-Domain oder vinovo.to → gelöschter Host), im Editor unsichtbar, obwohl der Player sie zeigt (Player nutzt alle Hosts, Editor filterte auf `is_active`). Diese Links konnten dadurch nicht bearbeitet/geleert werden.
+- **Fix** (`MirrorForm.jsx`): Editor rendert jetzt aktive Hoster PLUS Fallback-Zeilen (`extraHosts`) für jeden Link, dessen host_id nicht aktiv ist. Inaktive/gelöschte Hoster erscheinen mit Badge "Inaktiv" bzw. "Nicht verwaltet" (Domain aus URL abgeleitet) + Hinweistext. Neue i18n-Keys: `form.inactiveHost/unmanagedHost/unknownHost/legacyHint`.
+- **Embed-Modal erweitert** (`Dashboard.jsx`): zeigt jetzt Direktlink (schlank `/embed/`), Vollansicht-Link (`/watch/`) mit eigenem Kopierbutton, iframe-Code. Neue Keys: `dash.embedHint/watchLink/watchHint`.
+- Verifiziert per Screenshot: Editor zeigt vinovo.to-Legacy-Link mit Badge; Modal zeigt beide Links.
