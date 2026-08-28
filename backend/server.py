@@ -1344,6 +1344,9 @@ async def _run_import(inp: MirrorImportInput, user: dict):
 
     hosts = await db.hosts.find({}).to_list(1000)
 
+    def _norm(s):
+        return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
     def find_host(domain: str):
         d = domain.lower()
         def _m(a, b):
@@ -1354,8 +1357,35 @@ async def _run_import(inp: MirrorImportInput, user: dict):
                 return h
         return None
 
+    def find_host_by_label(label: str):
+        # ListMirror labels each mirror option with the provider's brand name
+        # (e.g. "DoodStream", "VOE", "Vinovo"). When the domain is an unknown mirror
+        # domain, map the provider via that label against known ACTIVE hosts so we
+        # never create a duplicate inactive host for a known provider.
+        nl = _norm(label)
+        if len(nl) < 3:
+            return None
+        for h in hosts:
+            if not h.get("is_active"):
+                continue
+            nh = _norm(h.get("name"))
+            if nh and len(nh) >= 3 and (nh == nl or nh in nl):
+                return h
+        return None
+
+    async def learn_alias(host: dict, domain: str):
+        d = domain.lower()
+        aliases = [str(x).lower() for x in (host.get("aliases") or [])]
+        if d == (host.get("domain") or "").lower() or d in aliases:
+            return
+        host.setdefault("aliases", [])
+        host["aliases"].append(d)
+        await db.hosts.update_one({"id": host["id"]}, {"$addToSet": {"aliases": d}})
+        if not any(a["domain"] == d for a in learned_aliases):
+            learned_aliases.append({"host": host.get("name"), "domain": d})
+
     imported, updated, skipped_existing = 0, 0, 0
-    created_hosts, skipped_hosts, resolve_ids = [], {}, []
+    created_hosts, skipped_hosts, resolve_ids, learned_aliases = [], {}, [], []
     for emb in scraped["results"]:
         source_ref = f"listmirror:{emb['slug']}"
         existing = await db.mirrors.find_one({"created_by": user["id"], "source_ref": source_ref})
@@ -1365,6 +1395,12 @@ async def _run_import(inp: MirrorImportInput, user: dict):
             if not domain:
                 continue
             h = find_host(domain)
+            if not h:
+                # Auto-assign to a known active provider by its label, and remember the
+                # new mirror domain as an alias for instant future matches.
+                h = find_host_by_label(label)
+                if h:
+                    await learn_alias(h, domain)
             if not h:
                 if inp.auto_create_hosts:
                     h = {
@@ -1441,6 +1477,7 @@ async def _run_import(inp: MirrorImportInput, user: dict):
         "embeds_found": scraped["embeds_found"],
         "failed_count": len(scraped["failed"]),
         "created_hosts": created_hosts,
+        "learned_aliases": learned_aliases,
         "unknown_hosts": [{"domain": d, "count": c} for d, c in skipped_hosts.items()],
     }
 

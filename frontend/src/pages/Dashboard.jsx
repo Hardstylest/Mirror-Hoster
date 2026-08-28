@@ -106,6 +106,14 @@ function ImportModal({ onClose, onImported }) {
             <div className="mt-2 rounded-md border border-border bg-surface/50 p-4 space-y-2 text-sm" data-testid="import-result">
               <p className="flex items-center gap-2 text-online font-medium"><CheckCircle2 size={16} /> {result.imported} imported · {result.updated || 0} updated · {result.skipped_existing || 0} skipped</p>
               {result.embeds_found != null && <p className="text-muted-foreground">Embeds found: {result.embeds_found}{result.failed_count ? ` · ${result.failed_count} could not be read` : ""}</p>}
+              {result.learned_aliases?.length > 0 && (
+                <div>
+                  <p className="flex items-center gap-2 text-online"><CheckCircle2 size={15} /> {t("dash.import.autoAssigned")}</p>
+                  <ul className="mt-1 list-disc list-inside text-muted-foreground">
+                    {result.learned_aliases.map((h) => <li key={h.domain}><span className="font-mono">{h.domain}</span> → {h.host}</li>)}
+                  </ul>
+                </div>
+              )}
               {result.created_hosts?.length > 0 && (
                 <div>
                   <p className="flex items-center gap-2 text-pending"><AlertTriangle size={15} /> New hosts created (inactive):</p>

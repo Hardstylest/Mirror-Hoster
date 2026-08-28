@@ -169,3 +169,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Fix** (`MirrorForm.jsx`): Editor rendert jetzt aktive Hoster PLUS Fallback-Zeilen (`extraHosts`) für jeden Link, dessen host_id nicht aktiv ist. Inaktive/gelöschte Hoster erscheinen mit Badge "Inaktiv" bzw. "Nicht verwaltet" (Domain aus URL abgeleitet) + Hinweistext. Neue i18n-Keys: `form.inactiveHost/unmanagedHost/unknownHost/legacyHint`.
 - **Embed-Modal erweitert** (`Dashboard.jsx`): zeigt jetzt Direktlink (schlank `/embed/`), Vollansicht-Link (`/watch/`) mit eigenem Kopierbutton, iframe-Code. Neue Keys: `dash.embedHint/watchLink/watchHint`.
 - Verifiziert per Screenshot: Editor zeigt vinovo.to-Legacy-Link mit Badge; Modal zeigt beide Links.
+
+
+## Legacy-Aufräumen + Flagge + Importer-Auto-Zuordnung (2026-06)
+- **Legacy aufräumen** (`MirrorForm.jsx`): Legacy-Zeilen (inaktive/nicht verwaltete Hoster) haben jetzt ein "Zuordnen zu…"-Dropdown (auf aktiven Hoster umhängen) + Papierkorb (Link entfernen). Übernahme beim Speichern. Keys: `form.reassignTo/removeLink/linkRemoved/linkReassigned`.
+- **Flagge statt Kürzel** (`EmbedPlayer.jsx`, nur Watch/full): Länderbadge zeigt Flaggen-Emoji + Klarname (via `Intl.DisplayNames`, sprachabhängig) statt "US"; Mouseover-Tooltip = Ländername. Helper `flagEmoji`/`countryName`.
+- **Importer-Auto-Zuordnung** (`server.py` `_run_import`): Unbekannte Anbieter-Domains werden über das ListMirror-**Label** (Provider-Brand) dem passenden AKTIVEN Hoster zugeordnet (`find_host_by_label`), statt einen Inaktiv-Duplikat-Host zu erzeugen. Die neue Domain wird automatisch als Alias am Host gelernt (`learn_alias`, `$addToSet`), sodass künftige Domain-Matches sofort greifen. Import-Antwort enthält `learned_aliases`; Anzeige im Import-Ergebnis-Modal (`dash.import.autoAssigned`).
+- Verifiziert: Backend-Test (unbekannte Domain + Label "DoodStream" → DoodStream zugeordnet, Alias gelernt, kein neuer Host); Screenshots für Legacy-Controls & Flagge.
