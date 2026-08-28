@@ -65,7 +65,7 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll, fill = false }
   return (
     <div className={fill ? "w-full h-full flex flex-col min-h-0" : "w-full"}>
       {/* Browser-style tab bar */}
-      <div className="flex items-end gap-1 overflow-x-auto bg-surface rounded-t-lg border border-b-0 border-border px-2 pt-2 shrink-0">
+      <div data-testid="player-tabbar" className="flex items-end gap-1 overflow-x-auto bg-surface rounded-t-lg border border-b-0 border-border px-2 pt-2 shrink-0">
         {hosts.map((h, i) => {
           const isActive = i === active;
           return (
@@ -90,7 +90,9 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll, fill = false }
               />
               <span>{h.host_name}</span>
               {h.status === "offline" ? (
-                <WifiOff size={13} className="text-offline" />
+                <span data-testid={`host-offline-badge-${h.host_name.toLowerCase()}`} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-offline/15 text-offline border border-offline/30">
+                  <WifiOff size={11} /> {t("player.offlineTag")}
+                </span>
               ) : h.status === "online" ? (
                 <Wifi size={13} className="text-online" />
               ) : null}

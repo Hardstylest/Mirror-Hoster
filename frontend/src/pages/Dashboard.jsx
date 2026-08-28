@@ -13,7 +13,9 @@ function EmbedModal({ mirror, onClose }) {
   const { t } = useI18n();
   const link = `${window.location.origin}/embed/${mirror.slug}`;
   const watch = `${window.location.origin}/watch/${mirror.slug}`;
-  const iframe = `<iframe src="${link}" width="100%" height="520" frameborder="0" allowfullscreen></iframe>`;
+  const iframe = `<iframe src="${link}" width="100%" height="520" frameborder="0" scrolling="no" allowfullscreen></iframe>`;
+  const responsive = `<iframe id="gp-${mirror.slug}" src="${link}" width="100%" height="520" style="border:0;width:100%;display:block" scrolling="no" allowfullscreen></iframe>
+<script>window.addEventListener("message",function(e){var d=e.data;if(d&&d.type==="gaypower-embed-height"&&d.slug==="${mirror.slug}"){var f=document.getElementById("gp-${mirror.slug}");if(f&&d.height)f.style.height=d.height+"px";}});</script>`;
   const copy = (text) => { navigator.clipboard.writeText(text); toast.success(t("dash.codeCopied")); };
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" data-testid="embed-code-modal" onClick={onClose}>
@@ -42,6 +44,14 @@ function EmbedModal({ mirror, onClose }) {
           <div>
             <label className="text-sm text-muted-foreground">{t("dash.iframeCode")}</label>
             <textarea readOnly value={iframe} rows={3} data-testid="embed-iframe-code" className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-sm font-mono" />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground">{t("dash.responsiveCode")}</label>
+            <p className="text-xs text-muted-foreground/70 mt-0.5">{t("dash.responsiveHint")}</p>
+            <textarea readOnly value={responsive} rows={4} data-testid="embed-responsive-code" className="mt-1 w-full bg-surface border border-border rounded-md px-3 py-2 text-xs font-mono" />
+            <button onClick={() => copy(responsive)} data-testid="copy-responsive-code-button" className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-md border border-border hover:border-brand hover:text-brand transition-colors text-sm">
+              <Copy size={14} /> {t("dash.copyResponsive")}
+            </button>
           </div>
           <button onClick={() => copy(iframe)} data-testid="copy-embed-code-button" className="inline-flex items-center gap-2 px-5 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors">
             <Code2 size={16} /> {t("dash.copyCode")}

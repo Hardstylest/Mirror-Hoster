@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import api from "../lib/api";
 import { useSettings } from "../context/SettingsContext";
@@ -26,6 +26,7 @@ export default function EmbedPlayer({ full = false }) {
   const { t, lang } = useI18n();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const rootRef = useRef(null);
 
   useEffect(() => {
     api.get(`/embed/${slug}`)
@@ -46,6 +47,24 @@ export default function EmbedPlayer({ full = false }) {
     html.style.overflow = "hidden"; body.style.overflow = "hidden";
     return () => { html.style.height = prev.hH; body.style.height = prev.bH; body.style.margin = prev.bM; html.style.overflow = prev.hO; body.style.overflow = prev.bO; };
   }, [full]);
+
+  // Auto-height: report the ideal player height (tab bar + 16:9 video) to the parent page
+  // so an embedding iframe can resize itself without a fixed height.
+  useEffect(() => {
+    if (full || !data) return;
+    const post = () => {
+      const el = rootRef.current;
+      const w = (el && el.clientWidth) || window.innerWidth;
+      const tab = el && el.querySelector('[data-testid="player-tabbar"]');
+      const tabH = tab ? tab.offsetHeight : 46;
+      const height = Math.round(w * 9 / 16) + tabH;
+      try { window.parent.postMessage({ type: "gaypower-embed-height", slug, height }, "*"); } catch (e) { /* cross-origin */ }
+    };
+    post();
+    const t = setTimeout(post, 400);
+    window.addEventListener("resize", post);
+    return () => { clearTimeout(t); window.removeEventListener("resize", post); };
+  }, [full, data, slug]);
 
   if (error) return (
     <div className="min-h-screen flex items-center justify-center text-muted-foreground">{t("player.notFound")}</div>
@@ -68,7 +87,7 @@ export default function EmbedPlayer({ full = false }) {
   );
 
   return (
-    <div className={full ? "min-h-screen bg-background flex items-center justify-center p-4" : "h-screen w-full bg-background overflow-hidden"}>
+    <div ref={rootRef} className={full ? "min-h-screen bg-background flex items-center justify-center p-4" : "h-screen w-full bg-background overflow-hidden"}>
       <AdblockGate mode={settings.antiadblock_mode || (settings.antiadblock_enabled ? "block" : "off")} />
       <div className={full ? "w-full max-w-4xl" : "w-full h-full"}>
         {full && (
