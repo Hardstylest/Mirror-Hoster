@@ -153,3 +153,12 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - P1: Bulk mirror import; embed URL auto-parsing/normalization per host.
 - P2: Email verification + password reset UI; referral/earnings estimate per mirror.
 - P2: Public embed theming/branding options; more seeded hosters (Streamtape, Filemoon, Vidoza).
+
+
+## Embed vs. Watch: schlanke Embed-Ansicht (2026-06)
+- **Anforderung**: Beim Einbetten auf Fremdseiten (`/embed/:slug`) soll NUR der Player + Hoster-Tabs sichtbar sein — kein Titel/Cover, kein Land/Verdienst-Badge, keine Sprach-/Theme-Umschalter, kein "Bereitgestellt von …", keine Beschreibung, keine Banner-Ads. Volle Ansicht via neuer Route.
+- **Umsetzung** (`App.js`, `EmbedPlayer.jsx`):
+  - Neue Route `/watch/:slug` → `<EmbedPlayer full />` (volle Ansicht wie bisher).
+  - `/embed/:slug` und `/e/:slug` → abgespeckt (Prop `full=false`, Default).
+  - Prop `full` steuert Header, Banner-Ads (`ad_player_top`/`ad_player_bottom`), Beschreibung, Powered-by. Pre-Roll (im VideoPlayer) und AdblockGate bleiben in BEIDEN Varianten aktiv (Nutzerwunsch).
+- Verifiziert per Screenshot: `/embed/` = nur Player+Tabs; `/watch/` = voll.

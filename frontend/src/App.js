@@ -43,6 +43,7 @@ function App() {
                   <Route path="/register" element={<Register />} />
                   <Route path="/e/:slug" element={<EmbedPlayer />} />
                   <Route path="/embed/:slug" element={<EmbedPlayer />} />
+                  <Route path="/watch/:slug" element={<EmbedPlayer full />} />
                   <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
                   <Route path="/dashboard/offline" element={<Protected><OfflineStreams /></Protected>} />
                   <Route path="/dashboard/new" element={<Protected><MirrorForm /></Protected>} />
