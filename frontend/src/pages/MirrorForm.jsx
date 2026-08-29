@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import api, { faviconUrl, formatApiError } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
-import { ArrowLeft, Save, WifiOff, Trash2, ExternalLink, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Save, WifiOff, Trash2, ExternalLink, AlertTriangle, Wand2 } from "lucide-react";
 
 export default function MirrorForm() {
   const { id } = useParams();
@@ -15,6 +15,8 @@ export default function MirrorForm() {
   const [extraHosts, setExtraHosts] = useState([]); // links whose host is inactive/legacy/deleted
   const [title, setTitle] = useState("");
   const [titleMatches, setTitleMatches] = useState([]);
+  const [bulkUrls, setBulkUrls] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [description, setDescription] = useState("");
   const [links, setLinks] = useState({}); // host_id -> embed_url
   const [statusMap, setStatusMap] = useState({}); // host_id -> status
@@ -68,6 +70,24 @@ export default function MirrorForm() {
     }, 450);
     return () => clearTimeout(timer);
   }, [title, editing]);
+
+  const applyBulk = async () => {
+    setBulkBusy(true);
+    try {
+      const { data } = await api.post("/mirrors/match-urls", { urls: bulkUrls });
+      const activeIds = new Set(hosts.map((x) => x.id));
+      const add = {};
+      let assigned = 0;
+      (data.matched || []).forEach((m) => { if (activeIds.has(m.host_id)) { add[m.host_id] = m.embed_url; assigned += 1; } });
+      setLinks((p) => ({ ...p, ...add }));
+      const unmatched = data.unmatched || [];
+      if (assigned) toast.success(t("form.bulkResult").replace("{n}", assigned));
+      if (unmatched.length) toast.error(t("form.bulkUnmatched").replace("{n}", unmatched.length) + ": " + unmatched.join(", "));
+      if (!assigned && !unmatched.length) toast.error(t("form.bulkEmpty"));
+      if (assigned) setBulkUrls("");
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail) || "Error"); }
+    setBulkBusy(false);
+  };
 
   const removeLegacy = (hid) => {
     setLinks((p) => { const n = { ...p }; delete n[hid]; return n; });
@@ -152,6 +172,17 @@ export default function MirrorForm() {
             </div>
 
             <div className="space-y-4">
+              <div className="rounded-md border border-dashed border-border bg-surface/40 p-4" data-testid="bulk-urls-box">
+                <label className="text-sm font-medium flex items-center gap-2"><Wand2 size={15} className="text-brand" /> {t("form.bulkTitle")}</label>
+                <p className="text-xs text-muted-foreground mt-0.5">{t("form.bulkHint")}</p>
+                <textarea data-testid="bulk-urls-input" value={bulkUrls} onChange={(e) => setBulkUrls(e.target.value)} rows={3}
+                  placeholder={"https://voe.sx/e/xxxx\nhttps://dsvplay.com/e/yyyy\nhttps://vinovo.to/e/zzzz"}
+                  className="mt-2 w-full bg-surface border border-border rounded-md px-3 py-2 font-mono text-sm focus:border-brand outline-none" />
+                <button type="button" onClick={applyBulk} disabled={bulkBusy || !bulkUrls.trim()} data-testid="bulk-apply-button"
+                  className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-md bg-brand text-black font-semibold text-sm hover:bg-brand-hover disabled:opacity-60 transition-colors">
+                  <Wand2 size={14} /> {bulkBusy ? t("form.bulkAssigning") : t("form.bulkAssign")}
+                </button>
+              </div>
               <label className="text-sm text-muted-foreground">{t("form.hostLinks")}</label>
               {[...hosts, ...extraHosts].map((h) => {
                 const isOffline = statusMap[h.id] === "offline";

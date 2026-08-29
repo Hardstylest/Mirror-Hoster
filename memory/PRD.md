@@ -229,3 +229,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Startup-Refresh**: `tier_updater()` aktualisiert jetzt sofort beim Start (sleep ans Ende verschoben) statt erst nach 24h -> nach Redeploy sind alle Saetze direkt aktuell. Manueller Button "Saetze aktualisieren" (POST /admin/hosts/refresh-tiers) bleibt.
 - Alle Scraper geprueft (ok): doodstream, voe, firestream, playmate, vidara, vinovo, vidnest. Streamtape + legacy Hosts ohne api_provider = manuell.
 - ERFORDERT REDEPLOY fuer Production.
+
+## Duplikate-Cleanup + Saetze-History + Bulk-URL-Import (2026-06)
+- **Duplikate aufräumen** (POST /admin/hosts/cleanup-duplicates, preview/apply): inaktive Duplikat-Hoster deren Name zu aktivem Hoster passt -> Links umhaengen + Domain/Aliase als Alias lernen + Duplikat loeschen; ohne Treffer & 0 Links -> loeschen; mit Links & kein Ziel -> behalten+melden. UI: Button+Vorschau-Panel im Admin-Tab "Anbieter & Saetze". Verifiziert: dooodster/myvidplay->DoodStream(2/54), streamtape.to->Streamtape, del Vidoza/Mixdrop/Bigwarp, keep Veev(1).
+- **Saetze-History**: refresh_host_tiers schreibt bei Aenderung in Collection tier_history {host_id,at,changes:[{tier,old,new}]}. GET /hosts/{id}/tier-history. UI: Uhr-Icon je Hoster-Karte klappt Verlauf auf (nur Scraper-Provider). Keys admin.host.history*.
+- **Bulk-URL-Import (Mirror erstellen/bearbeiten)**: Feld "Mehrere URLs einfuegen" + POST /mirrors/match-urls (Domain/Alias, sonst Namens-Token) fuellt automatisch die passenden Hoster-Felder; nicht zuordenbare werden als Toast gemeldet. Keys form.bulk*. Verifiziert per Screenshot.
+- Helper _match_host_for_domain/_norm_name im Backend. ERFORDERT REDEPLOY.
+- HINWEIS: Turnstile in PREVIEW-DB temporaer deaktiviert (Site-Gate-Widget laedt auf Preview-Domain nicht/Prod-Key). Production-Settings unberuehrt (separate DB).

@@ -6,8 +6,11 @@ import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup, Search, Eraser,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup, Search, Eraser, History,
 } from "lucide-react";
+
+const TIER_SCRAPER_PROVIDERS = ["doodstream", "voe", "firestream", "playmate", "vidara", "vinovo", "vidnest"];
+
 
 const emptyHost = { name: "", domain: "", aliases: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
 
@@ -466,6 +469,37 @@ export default function AdminDashboard() {
   };
 
   const fmtDate = (iso) => { try { return new Date(iso).toLocaleDateString(); } catch { return iso; } };
+  const fmtDateTime = (iso) => { try { return new Date(iso).toLocaleString(); } catch { return iso; } };
+
+  const [dupPreview, setDupPreview] = useState(null);
+  const [dupBusy, setDupBusy] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(null);
+  const [historyData, setHistoryData] = useState({});
+
+  const cleanupDuplicates = async (preview) => {
+    setDupBusy(true);
+    try {
+      const { data } = await api.post("/admin/hosts/cleanup-duplicates", { preview });
+      if (preview) setDupPreview(data);
+      else {
+        toast.success(t("admin.host.dupDone").replace("{m}", data.merged.length).replace("{d}", data.deleted.length));
+        setDupPreview(null);
+        await load();
+      }
+    } catch (err) { toast.error(formatApiError(err.response?.data?.detail)); }
+    setDupBusy(false);
+  };
+
+  const toggleHistory = async (id) => {
+    if (historyOpen === id) { setHistoryOpen(null); return; }
+    setHistoryOpen(id);
+    if (!historyData[id]) {
+      try {
+        const { data } = await api.get(`/hosts/${id}/tier-history`);
+        setHistoryData((p) => ({ ...p, [id]: data.history || [] }));
+      } catch (e) { console.error("tier-history load failed", e); setHistoryData((p) => ({ ...p, [id]: [] })); }
+    }
+  };
 
   const changeRole = async (u) => {
     const newRole = u.role === "admin" ? "user" : "admin";
@@ -531,12 +565,37 @@ export default function AdminDashboard() {
         {tab === "hosts" && (
           <div>
             <div className="flex justify-end mb-4 gap-2">
+              <button onClick={() => cleanupDuplicates(true)} disabled={dupBusy} data-testid="cleanup-duplicates-button"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border hover:border-brand hover:text-brand disabled:opacity-60 transition-colors">
+                <Eraser size={18} /> {t("admin.host.cleanupDuplicates")}
+              </button>
               <button onClick={refreshTiers} disabled={refreshingTiers} data-testid="refresh-tiers-button"
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-border hover:border-brand hover:text-brand disabled:opacity-60 transition-colors">
                 <RefreshCw size={18} className={refreshingTiers ? "animate-spin" : ""} /> {refreshingTiers ? t("admin.host.refreshingTiers") : t("admin.host.refreshTiers")}
               </button>
               <button onClick={() => setEditor({ new: true })} data-testid="add-host-button" className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors"><Plus size={18} /> {t("admin.addHost")}</button>
             </div>
+
+            {dupPreview && (
+              <div className="bg-card border border-border rounded-lg p-4 mb-4 text-sm space-y-2" data-testid="dup-preview">
+                {dupPreview.merged.length > 0 && (
+                  <div><span className="text-brand font-semibold">{t("admin.host.dupMerge")}:</span>
+                    <ul className="list-disc list-inside text-muted-foreground mt-1">
+                      {dupPreview.merged.map((x) => <li key={x.domain}><span className="font-mono">{x.domain}</span> → {x.to} ({x.links} Links)</li>)}
+                    </ul>
+                  </div>
+                )}
+                {dupPreview.deleted.length > 0 && (
+                  <div><span className="text-offline font-semibold">{t("admin.host.dupDelete")}:</span> <span className="text-muted-foreground">{dupPreview.deleted.map((x) => x.name).join(", ")}</span></div>
+                )}
+                {dupPreview.kept.length > 0 && (
+                  <div><span className="text-pending font-semibold">{t("admin.host.dupKept")}:</span> <span className="text-muted-foreground">{dupPreview.kept.map((x) => `${x.name} (${x.links})`).join(", ")}</span></div>
+                )}
+                {(dupPreview.merged.length + dupPreview.deleted.length) > 0
+                  ? <button onClick={() => cleanupDuplicates(false)} disabled={dupBusy} data-testid="dup-run-button" className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors"><Eraser size={15} /> {t("admin.host.dupApply")}</button>
+                  : <p className="text-muted-foreground">{t("admin.host.dupNone")}</p>}
+              </div>
+            )}
 
             <div className="space-y-3">
               {hosts.map((h) => (
@@ -552,10 +611,31 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
+                      {TIER_SCRAPER_PROVIDERS.includes(h.api_provider) && (
+                        <button onClick={() => toggleHistory(h.id)} data-testid={`history-toggle-${h.id}`} title={t("admin.host.history")}
+                          className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><History size={17} /></button>
+                      )}
                       <button onClick={() => setEditor({ host: h })} data-testid={`edit-host-${h.id}`} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Pencil size={17} /></button>
                       <button onClick={() => deleteHost(h.id)} data-testid={`delete-host-${h.id}`} className="p-2 rounded-md text-muted-foreground hover:text-offline hover:bg-secondary transition-colors"><Trash2 size={17} /></button>
                     </div>
                   </div>
+                  {historyOpen === h.id && (
+                    <div className="mt-3 border-t border-border pt-3" data-testid={`history-${h.id}`}>
+                      <p className="text-xs font-semibold text-muted-foreground mb-2">{t("admin.host.historyTitle")}</p>
+                      {(historyData[h.id] || []).length === 0 ? (
+                        <p className="text-xs text-muted-foreground">{t("admin.host.historyEmpty")}</p>
+                      ) : (
+                        <ul className="space-y-1.5">
+                          {(historyData[h.id] || []).map((e) => (
+                            <li key={e.id} className="text-xs">
+                              <span className="text-muted-foreground font-mono">{fmtDateTime(e.at)}</span>
+                              <span className="ml-2">{e.changes.map((c) => `${c.tier}: $${c.old ?? "–"}→$${c.new}`).join(" · ")}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                   {h.aliases && h.aliases.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5 mt-3" data-testid={`aliases-${h.id}`}>
                       <span className="text-xs text-muted-foreground mr-1">{t("admin.host.aliasesLabel")} ({h.aliases.length}):</span>

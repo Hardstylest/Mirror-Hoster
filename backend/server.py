@@ -891,8 +891,24 @@ async def refresh_host_tiers(host: dict) -> dict:
         update = {"tiers": tiers, "tiers_updated_at": now_iso()}
         if default_rate is not None:
             update["default_rate"] = default_rate
+        # Record a history entry only when the rates actually changed.
+        old_map = {t.get("name"): t.get("rate") for t in (host.get("tiers") or [])}
+        new_map = {t.get("name"): t.get("rate") for t in tiers}
+        old_default = host.get("default_rate")
+        changes = []
+        for name in sorted(set(old_map) | set(new_map)):
+            o, n = old_map.get(name), new_map.get(name)
+            if o != n:
+                changes.append({"tier": name, "old": o, "new": n})
+        if default_rate is not None and old_default != default_rate:
+            changes.append({"tier": "Default", "old": old_default, "new": default_rate})
         await db.hosts.update_one({"id": host["id"]}, {"$set": update})
-        return {"host_id": host.get("id"), "name": host.get("name"), "ok": True, "count": len(tiers)}
+        if changes and host.get("tiers"):  # skip the very first seed (no prior tiers)
+            await db.tier_history.insert_one({
+                "id": str(uuid.uuid4()), "host_id": host["id"], "host_name": host.get("name"),
+                "at": now_iso(), "changes": changes,
+            })
+        return {"host_id": host.get("id"), "name": host.get("name"), "ok": True, "count": len(tiers), "changed": len(changes)}
     except Exception as e:
         logger.warning(f"refresh_host_tiers {host.get('name')} failed: {e}")
         return {"host_id": host.get("id"), "name": host.get("name"), "ok": False, "message": str(e)}
@@ -1230,6 +1246,114 @@ async def refresh_tiers(inp: RefreshTiersInput, admin: dict = Depends(get_admin_
     for h in hosts:
         results.append(await refresh_host_tiers(h))
     return {"results": results}
+
+@api_router.get("/hosts/{host_id}/tier-history")
+async def get_tier_history(host_id: str, admin: dict = Depends(get_admin_user)):
+    docs = await db.tier_history.find({"host_id": host_id}).sort("at", -1).to_list(50)
+    return {"history": [{"id": d["id"], "at": d["at"], "changes": d["changes"]} for d in docs]}
+
+
+def _norm_name(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def _match_host_for_domain(domain, active):
+    """Match a URL domain to an active host: by domain/alias, else by provider name token."""
+    d = (domain or "").lower()
+    if not d:
+        return None
+    def _m(a, b):
+        return a and b and (a == b or a.endswith("." + b) or b.endswith("." + a))
+    for h in active:
+        cands = [(h.get("domain") or "").lower()] + [str(x).lower() for x in (h.get("aliases") or [])]
+        if any(_m(d, c) for c in cands if c):
+            return h
+    ndom = _norm_name(d)
+    nroot = _norm_name(d.split(".")[0])
+    if len(nroot) >= 3:
+        for h in active:
+            nh = _norm_name(h.get("name"))
+            if len(nh) >= 3 and (nh == nroot or nh in ndom):
+                return h
+    return None
+
+
+@api_router.post("/mirrors/match-urls")
+async def match_urls(inp: dict, user: dict = Depends(get_current_user)):
+    """Given a blob/list of URLs, map each to the matching active host so the create
+    form can auto-fill the per-host link fields."""
+    raw = inp.get("urls")
+    if isinstance(raw, str):
+        raw = re.split(r"[\s,]+", raw)
+    urls = [u.strip() for u in (raw or []) if u and u.strip()]
+    active = await db.hosts.find({"is_active": True}).to_list(200)
+    matched, unmatched = {}, []
+    for u in urls:
+        dom = _lm_domain(u)
+        h = _match_host_for_domain(dom, active)
+        if h:
+            matched[h["id"]] = u  # last one wins per host
+        else:
+            unmatched.append(u)
+    return {"matched": [{"host_id": k, "embed_url": v} for k, v in matched.items()], "unmatched": unmatched}
+
+
+@api_router.post("/admin/hosts/cleanup-duplicates")
+async def cleanup_duplicate_hosts(inp: dict, admin: dict = Depends(get_admin_user)):
+    """Merge/remove inactive duplicate hosts. If a duplicate's name matches an active
+    host, its links are reassigned there (+domain learned as alias) and it is deleted.
+    Duplicates with no match and no links are deleted; others are kept and reported."""
+    preview = bool(inp.get("preview", True))
+    hosts = await db.hosts.find({}).to_list(300)
+    active = [h for h in hosts if h.get("is_active")]
+    active_by_name = {_norm_name(h.get("name")): h for h in active}
+    dups = [h for h in hosts if not h.get("is_active")]
+
+    ref = {}
+    async for mr in db.mirrors.find({}, {"links": 1, "id": 1}):
+        for l in mr.get("links", []):
+            ref[l["host_id"]] = ref.get(l["host_id"], 0) + 1
+
+    merged, deleted, kept = [], [], []
+    for d in dups:
+        target = active_by_name.get(_norm_name(d.get("name")))
+        n = ref.get(d["id"], 0)
+        if target and target["id"] != d["id"]:
+            merged.append({"from": d.get("name"), "domain": d.get("domain"), "to": target.get("name"), "links": n})
+        elif n == 0:
+            deleted.append({"name": d.get("name"), "domain": d.get("domain")})
+        else:
+            kept.append({"name": d.get("name"), "domain": d.get("domain"), "links": n})
+
+    result = {"preview": preview, "merged": merged, "deleted": deleted, "kept": kept}
+    if preview:
+        return result
+
+    for d in dups:
+        target = active_by_name.get(_norm_name(d.get("name")))
+        n = ref.get(d["id"], 0)
+        if target and target["id"] != d["id"]:
+            # learn aliases (dup domain + its aliases)
+            new_aliases = [x for x in ([d.get("domain")] + list(d.get("aliases") or [])) if x]
+            if new_aliases:
+                await db.hosts.update_one({"id": target["id"]}, {"$addToSet": {"aliases": {"$each": [a.lower() for a in new_aliases]}}})
+            # reassign links across mirrors, then de-dupe per mirror (prefer online)
+            async for mr in db.mirrors.find({"links.host_id": d["id"]}):
+                links = mr.get("links", [])
+                for l in links:
+                    if l["host_id"] == d["id"]:
+                        l["host_id"] = target["id"]
+                seen = {}
+                for l in links:
+                    hid = l["host_id"]
+                    if hid not in seen or (l.get("status") == "online" and seen[hid].get("status") != "online"):
+                        seen[hid] = l
+                await db.mirrors.update_one({"id": mr["id"]}, {"$set": {"links": list(seen.values())}})
+            await db.hosts.delete_one({"id": d["id"]})
+        elif n == 0:
+            await db.hosts.delete_one({"id": d["id"]})
+    return result
+
 
 @api_router.post("/hosts/{host_id}/remove-alias")
 async def remove_host_alias(host_id: str, inp: dict, admin: dict = Depends(get_admin_user)):
