@@ -82,11 +82,13 @@ export default function Statistics() {
   useEffect(() => { load(); }, [load]);
 
   const countries = data?.top_countries || [];
+  const earnCountries = data?.earnings_by_country || [];
   const mirrors = data?.top_mirrors || [];
   const earning = data?.top_earning || [];
   const hosts = data?.top_hosts || [];
   const timeline = data?.timeline || [];
   const cMax = Math.max(1, ...countries.map((c) => c.views));
+  const ecMax = Math.max(1, ...earnCountries.map((c) => c.earnings));
   const mMax = Math.max(1, ...mirrors.map((m) => m.views));
   const eMax = Math.max(1, ...earning.map((m) => m.earnings));
   const hMax = Math.max(1, ...hosts.map((h) => h.views));
@@ -166,6 +168,19 @@ export default function Statistics() {
                         flag={flagEmoji(c.country_code)}
                         label={c.country_code === "XX" ? t("dash.countries.unknown") : countryName(c.country_code, lang)}
                         value={c.views} max={cMax} />
+                    ))}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel icon={DollarSign} title={t("statsov.earnByCountry")} note={t("statsov.estimateNote")} testid="panel-earn-country">
+                {earnCountries.length === 0 || ecMax <= 0 ? <p className="text-muted-foreground text-sm">{t("statsov.empty")}</p> : (
+                  <div className="space-y-2.5">
+                    {earnCountries.map((c) => (
+                      <RankBar key={c.country_code} testid={`earn-country-${c.country_code}`}
+                        flag={flagEmoji(c.country_code)}
+                        label={c.country_code === "XX" ? t("dash.countries.unknown") : countryName(c.country_code, lang)}
+                        value={`~$${c.earnings}`} weight={c.earnings} max={ecMax} />
                     ))}
                   </div>
                 )}

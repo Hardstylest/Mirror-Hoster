@@ -2103,6 +2103,12 @@ async def record_host_view(slug: str, host_id: str):
     await db.host_views.update_one(
         {"slug": slug, "host_id": host_id},
         {"$inc": {"count": 1}}, upsert=True)
+    await db.host_view_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "slug": slug,
+        "host_id": host_id,
+        "timestamp": now_iso(),
+    })
     return {"ok": True}
 
 
@@ -2222,7 +2228,7 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
         {"$group": {"_id": {"m": "$mirror_id", "c": _CC_EXPR}, "n": {"$sum": 1}}},
     ]).to_list(100000)
 
-    mirror_views, mirror_earn = {}, {}
+    mirror_views, mirror_earn, country_earn = {}, {}, {}
     for row in mc_agg:
         mid, cc, n = row["_id"]["m"], row["_id"]["c"], row["n"]
         mirror_views[mid] = mirror_views.get(mid, 0) + n
@@ -2239,7 +2245,9 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
             r = rate_for_country(h, cc)
             if r > best:
                 best = r
-        mirror_earn[mid] = mirror_earn.get(mid, 0.0) + (n * best / 1000.0)
+        earn = n * best / 1000.0
+        mirror_earn[mid] = mirror_earn.get(mid, 0.0) + earn
+        country_earn[cc] = country_earn.get(cc, 0.0) + earn
 
     def _mtitle(mid):
         return mirror_by_id.get(mid, {}).get("title", "?")
@@ -2254,6 +2262,9 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
         [{"id": mid, "title": _mtitle(mid), "slug": _mslug(mid),
           "earnings": round(e, 2), "views": mirror_views.get(mid, 0)} for mid, e in mirror_earn.items()],
         key=lambda x: -x["earnings"])[:10]
+    earnings_by_country = sorted(
+        [{"country_code": cc or "XX", "earnings": round(e, 2)} for cc, e in country_earn.items() if e > 0],
+        key=lambda x: -x["earnings"])[:12]
 
     tl_agg = await db.views.aggregate([
         {"$match": vmatch},
@@ -2263,12 +2274,24 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
     timeline = [{"date": a["_id"], "views": a["n"]} for a in tl_agg]
 
     slugs = [m.get("slug") for m in mirrors]
-    hv_match = {} if is_admin else {"slug": {"$in": slugs}}
-    hv = await db.host_views.find(hv_match).to_list(100000)
     host_totals = {}
-    for row in hv:
-        hid = row.get("host_id")
-        host_totals[hid] = host_totals.get(hid, 0) + int(row.get("count", 0) or 0)
+    if start:
+        # period-scoped: aggregate timestamped host-view events
+        ev_match = {"timestamp": {"$gte": start}}
+        if not is_admin:
+            ev_match["slug"] = {"$in": slugs}
+        ev_agg = await db.host_view_events.aggregate([
+            {"$match": ev_match},
+            {"$group": {"_id": "$host_id", "n": {"$sum": 1}}},
+        ]).to_list(1000)
+        host_totals = {a["_id"]: a["n"] for a in ev_agg}
+    else:
+        # all-time: use the complete legacy counter collection
+        hv_match = {} if is_admin else {"slug": {"$in": slugs}}
+        hv = await db.host_views.find(hv_match).to_list(100000)
+        for row in hv:
+            hid = row.get("host_id")
+            host_totals[hid] = host_totals.get(hid, 0) + int(row.get("count", 0) or 0)
     top_hosts = sorted(
         [{"host_name": host_by_id.get(hid, {}).get("name", hid or "?"),
           "domain": host_by_id.get(hid, {}).get("domain", ""), "views": v}
@@ -2280,6 +2303,7 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
         "total_views": sum(mirror_views.values()),
         "total_earnings": round(sum(mirror_earn.values()), 2),
         "top_countries": top_countries,
+        "earnings_by_country": earnings_by_country,
         "top_mirrors": top_mirrors,
         "top_earning": top_earning,
         "timeline": timeline,
