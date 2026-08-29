@@ -222,3 +222,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 ## Favicon + Browser-Tab-Titel (2026-06)
 - **Feature**: Statt "Emergent | Fullstack App" jetzt eigenes Favicon + Titel. Generiertes Icon (cyan Mirror/Play) in public/ als favicon.ico, favicon.png(512), favicon-32.png, apple-touch-icon.png(180), logo192/512.png. index.html: <title>NurGay Mirror Stream</title>, favicon-Links, description/theme-color aktualisiert. Titel zusaetzlich dynamisch: SettingsContext setzt document.title = settings.site_name (matcht den im Admin konfigurierten Namen).
 - Verifiziert: alle Icon-URLs 200; Header zeigt Brand. ERFORDERT REDEPLOY fuer Production.
+
+## Playmate Tier-Scraper + Startup-Auto-Refresh (2026-06)
+- **Bug**: Playmate-Saetze waren veraltet (50/35/30, default 10) und aktualisierten sich nie (kein Scraper; API-Key ist NUR fuer Link-Resolution, nicht fuer Tiers).
+- **Fix**: `scrape_playmate_tiers()` nutzt die JSON-API `https://playmate.to/api/earn` (countries[{code,tier,per10k}], other{per10k}); Einheit $/10k (wie VOE). In TIER_SCRAPERS registriert. Live-Werte jetzt: T1=45 T2=27 T3=22 T4=12, default 8.
+- **Startup-Refresh**: `tier_updater()` aktualisiert jetzt sofort beim Start (sleep ans Ende verschoben) statt erst nach 24h -> nach Redeploy sind alle Saetze direkt aktuell. Manueller Button "Saetze aktualisieren" (POST /admin/hosts/refresh-tiers) bleibt.
+- Alle Scraper geprueft (ok): doodstream, voe, firestream, playmate, vidara, vinovo, vidnest. Streamtape + legacy Hosts ohne api_provider = manuell.
+- ERFORDERT REDEPLOY fuer Production.

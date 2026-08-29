@@ -850,12 +850,31 @@ def scrape_vinovo_tiers():
 def scrape_vidnest_tiers():
     return _scrape_tier_blocks("https://vidnest.io/earn")
 
-# Note: Playmate's earn table is rendered client-side and not present in the raw HTML,
-# so it can't be scraped server-side; its tiers stay as seeded (admin-editable).
+def scrape_playmate_tiers():
+    """Playmate's earn table is client-side, but the data is served as JSON at
+    /api/earn ({countries:[{code,tier,per10k}], other:{per10k}}). Rate unit is $/10k
+    views, matching the other hosts."""
+    data = requests.get("https://playmate.to/api/earn", timeout=15, headers=_SCRAPE_HEADERS).json()
+    order, by_tier = [], {}
+    for c in data.get("countries", []):
+        tier, code, rate = c.get("tier") or "", c.get("code"), c.get("per10k")
+        if not code or rate is None:
+            continue
+        if tier not in by_tier:
+            by_tier[tier] = {"rate": round(float(rate), 2), "countries": []}
+            order.append(tier)
+        by_tier[tier]["countries"].append(code)
+    tiers = [{"name": f"Tier {i+1}", "rate": by_tier[t]["rate"], "countries": by_tier[t]["countries"]}
+             for i, t in enumerate(order)]
+    other = data.get("other") or {}
+    default_rate = round(float(other["per10k"]), 2) if other.get("per10k") is not None else None
+    return tiers, default_rate
+
 TIER_SCRAPERS.update({
     "vidara": scrape_vidara_tiers,
     "vinovo": scrape_vinovo_tiers,
     "vidnest": scrape_vidnest_tiers,
+    "playmate": scrape_playmate_tiers,
 })
 
 async def refresh_host_tiers(host: dict) -> dict:
@@ -2888,7 +2907,6 @@ async def offline_checker():
 async def tier_updater():
     interval = int(os.environ.get("TIER_UPDATE_HOURS", "24")) * 3600
     while True:
-        await asyncio.sleep(interval)
         try:
             hosts = await db.hosts.find({"api_provider": {"$in": list(TIER_SCRAPERS.keys())}}).to_list(100)
             for h in hosts:
@@ -2896,6 +2914,7 @@ async def tier_updater():
             logger.info("Tier auto-update completed")
         except Exception as e:
             logger.error(f"Tier updater error: {e}")
+        await asyncio.sleep(interval)
 
 @app.on_event("startup")
 async def on_startup():
