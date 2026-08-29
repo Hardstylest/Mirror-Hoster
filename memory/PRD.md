@@ -265,3 +265,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Fix** (`server.py` stats_overview): neuer Helper `canonical_host(hid)` faltet Duplikate/Legacy/gelöschte Hoster in EINEN aktiven Hoster (per Domain/Alias via `_match_host_for_domain`, sonst per normalisiertem Namen `_norm_name` → alle "Doodstream"/"DoodStream" auf einen Bucket). Gelöschte host_ids werden über `link_ref` (Domain/Name aus Mirror-Links) aufgelöst; nicht auflösbare Alt-IDs werden verworfen (kein UUID-Müll mehr). Angewendet auf `top_hosts` UND `hosts_by_country` (Aggregation je Land jetzt über kanonische Namen).
 - Rein anzeigeseitige Aggregation — verändert KEINE DB-Dokumente (nicht-destruktiv). Verifiziert (curl): Preview top_hosts = DoodStream 43 / VOE 30 / FireStream 8 (Varianten gemergt, UUIDs weg).
 - ERFORDERT REDEPLOY für Production.
+
+## Mirror-Editor als Modal-Overlay (2026-06)
+- Wunsch: Editier-Bereich soll wie die "Codes anzeigen"-Ansicht als Overlay/Modal erscheinen statt Seitenwechsel.
+- Umsetzung: Formularlogik aus `pages/MirrorForm.jsx` in wiederverwendbare Komponente `components/MirrorEditor.jsx` extrahiert (Props: `id`, `onSuccess`). `MirrorForm.jsx` ist jetzt schlanker Wrapper (DashboardLayout + Back + MirrorEditor) — Route `/dashboard/edit/:id` bleibt als Direktlink erhalten. Neue Komponente `EditModal` in `Dashboard.jsx` (Overlay im Stil von EmbedModal, scrollbar via `overflow-y-auto`+`my-8`, sticky Header). Edit-Button (`edit-{id}`) öffnet jetzt das Modal (preventDefault auf dem Link, `setEditFor(m)`); nach dem Speichern schließt es und lädt die Liste neu (`onSaved`).
+- Playmate `/watch/`→`/embed/` Fix aus vorherigem Schritt bleibt bestehen.
+- Verifiziert: Screenshot — Edit-Modal öffnet vorausgefüllt (Titel "Jock Love 2", Hoster-Links DoodStream/VOE etc.), Save-Button + Bulk-Box vorhanden.
+- ERFORDERT REDEPLOY für Production.

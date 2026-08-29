@@ -3,11 +3,30 @@ import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import api, { faviconUrl } from "../lib/api";
 import { DashboardLayout } from "../components/DashboardLayout";
+import { MirrorEditor } from "../components/MirrorEditor";
 import { useI18n } from "../context/I18nContext";
 import {
   Film, Eye, Wifi, WifiOff, Plus, Copy, BarChart3, Pencil, Trash2, RefreshCw, ExternalLink, Clock,
   Code2, Search, ChevronLeft, ChevronRight, X, DownloadCloud, CheckCircle2, AlertTriangle,
 } from "lucide-react";
+
+function EditModal({ mirror, onClose, onSaved }) {
+  const { t } = useI18n();
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto" data-testid="edit-mirror-modal" onClick={onClose}>
+      <div className="bg-card border border-border rounded-lg w-full max-w-2xl my-8" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card rounded-t-lg z-10">
+          <h3 className="font-display font-bold text-lg">{t("form.edit")}</h3>
+          <button onClick={onClose} data-testid="edit-modal-close" className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+        </div>
+        <div className="p-6">
+          <MirrorEditor id={mirror.id} onSuccess={onSaved} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function EmbedModal({ mirror, onClose }) {
   const { t } = useI18n();
@@ -184,6 +203,7 @@ export default function Dashboard() {
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
   const [embedFor, setEmbedFor] = useState(null);
+  const [editFor, setEditFor] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -363,7 +383,7 @@ export default function Dashboard() {
                     <button onClick={() => copyLink(m.slug)} data-testid={`copy-link-${m.id}`} title={t("dash.tip.copy")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Copy size={18} /></button>
                     <button onClick={() => checkNow(m.id)} disabled={checking === m.id} data-testid={`check-mirror-${m.id}`} title={t("dash.tip.check")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><RefreshCw size={18} className={checking === m.id ? "animate-spin" : ""} /></button>
                     <Link to={`/dashboard/stats/${m.id}`} data-testid={`stats-${m.id}`} title={t("dash.tip.stats")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><BarChart3 size={18} /></Link>
-                    <Link to={`/dashboard/edit/${m.id}`} data-testid={`edit-${m.id}`} title={t("dash.tip.edit")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Pencil size={18} /></Link>
+                    <Link to={`/dashboard/edit/${m.id}`} onClick={(e) => { e.preventDefault(); setEditFor(m); }} data-testid={`edit-${m.id}`} title={t("dash.tip.edit")} className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Pencil size={18} /></Link>
                     <button onClick={() => remove(m.id)} data-testid={`delete-${m.id}`} title={t("dash.tip.delete")} className="p-2 rounded-md text-muted-foreground hover:text-offline hover:bg-secondary transition-colors"><Trash2 size={18} /></button>
                   </div>
                 </div>
@@ -394,6 +414,7 @@ export default function Dashboard() {
         )}
       </div>
       {embedFor && <EmbedModal mirror={embedFor} onClose={() => setEmbedFor(null)} />}
+      {editFor && <EditModal mirror={editFor} onClose={() => setEditFor(null)} onSaved={() => { setEditFor(null); load(); }} />}
       {showImport && <ImportModal onClose={() => setShowImport(false)} onImported={load} />}
     </DashboardLayout>
   );
