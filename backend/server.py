@@ -2315,11 +2315,47 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
         for row in hv:
             hid = row.get("host_id")
             host_totals[hid] = host_totals.get(hid, 0) + int(row.get("count", 0) or 0)
-    top_hosts = sorted(
-        [{"host_name": host_by_id.get(hid, {}).get("name", hid or "?"),
-          "domain": host_by_id.get(hid, {}).get("domain", ""), "views": v}
-         for hid, v in host_totals.items() if v > 0],
-        key=lambda x: -x["views"])[:10]
+    # Canonical host grouping: fold duplicate/legacy/deleted host records (e.g. several
+    # DoodStream domains) into one active host, and resolve raw UUIDs via mirror links.
+    active_hosts = [h for h in hosts if h.get("is_active")]
+    link_ref = {}
+    for _m in mirrors:
+        for _l in _m.get("links", []):
+            _hid = _l.get("host_id")
+            if _hid and _hid not in link_ref:
+                link_ref[_hid] = ((_l.get("host_domain") or _lm_domain(_l.get("url", "")) or "").lower(),
+                                  _l.get("host_name") or "")
+
+    def canonical_host(hid):
+        h = host_by_id.get(hid)
+        if h:
+            domain, name = (h.get("domain") or "").lower(), (h.get("name") or "")
+        else:
+            ref = link_ref.get(hid)
+            domain, name = (ref[0], ref[1]) if ref else ("", "")
+        match = _match_host_for_domain(domain, active_hosts) if domain else None
+        if not match and name:
+            nn = _norm_name(name)
+            match = next((a for a in active_hosts if _norm_name(a.get("name")) == nn), None)
+        if match:
+            return ("h:" + match["id"], match.get("name") or "?", (match.get("domain") or "").lower())
+        if name:
+            return ("n:" + _norm_name(name), name, domain)
+        if domain:
+            return ("d:" + domain, domain, domain)
+        return None  # unresolvable legacy id -> drop
+
+    host_groups = {}
+    for hid, v in host_totals.items():
+        if v <= 0:
+            continue
+        c = canonical_host(hid)
+        if not c:
+            continue
+        key, name, domain = c
+        g = host_groups.setdefault(key, {"host_name": name, "domain": domain, "views": 0})
+        g["views"] += v
+    top_hosts = sorted(host_groups.values(), key=lambda x: -x["views"])[:10]
 
     # which hoster is played most per country (from timestamped host-view events)
     hbc_match = {}
@@ -2335,11 +2371,19 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
     hbc = {}
     for row in hbc_agg:
         cc, hid, n = row["_id"]["c"], row["_id"]["h"], row["n"]
-        hbc.setdefault(cc, {"country_code": cc or "XX", "total": 0, "hosts": []})
-        hbc[cc]["total"] += n
-        if len(hbc[cc]["hosts"]) < 4:
-            hbc[cc]["hosts"].append({"host_name": host_by_id.get(hid, {}).get("name", hid or "?"), "views": n})
-    hosts_by_country = sorted(hbc.values(), key=lambda x: -x["total"])[:10]
+        c = canonical_host(hid)
+        if not c:
+            continue
+        name = c[1]
+        entry = hbc.setdefault(cc, {"country_code": cc or "XX", "total": 0, "_by": {}})
+        entry["total"] += n
+        entry["_by"][name] = entry["_by"].get(name, 0) + n
+    hosts_by_country = []
+    for entry in hbc.values():
+        top = sorted(entry["_by"].items(), key=lambda x: -x[1])[:4]
+        hosts_by_country.append({"country_code": entry["country_code"], "total": entry["total"],
+                                 "hosts": [{"host_name": n, "views": v} for n, v in top]})
+    hosts_by_country = sorted(hosts_by_country, key=lambda x: -x["total"])[:10]
 
     return {
         "period": period,
