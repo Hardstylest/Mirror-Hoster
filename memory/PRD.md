@@ -272,3 +272,8 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Playmate `/watch/`→`/embed/` Fix aus vorherigem Schritt bleibt bestehen.
 - Verifiziert: Screenshot — Edit-Modal öffnet vorausgefüllt (Titel "Jock Love 2", Hoster-Links DoodStream/VOE etc.), Save-Button + Bulk-Box vorhanden.
 - ERFORDERT REDEPLOY für Production.
+
+## Mirror bearbeiten direkt im /watch-Player (2026-06)
+- Der Edit-Button im /watch-Player (`EmbedPlayer.jsx`, full-Modus, `data.can_edit`) navigierte bisher via Link auf `/dashboard/edit/:id`. Jetzt öffnet er dasselbe MirrorEditor-Overlay direkt in der Player-Ansicht (State `editOpen`, Modal im Stil von Dashboard/EmbedModal, scrollbar). Nach dem Speichern schließt es und lädt die Mirror-Daten via `reload()` (`GET /embed/{slug}`) neu, sodass die aktualisierten Hoster sofort im Player erscheinen. `Link`-Import entfernt (ungenutzt).
+- Verifiziert: Screenshot — /watch/YfBrRMjIK7 als Admin, Edit-Button öffnet Overlay vorausgefüllt (Titel "Jock Love 2", Hoster-Links), Save-Button vorhanden. testids: watch-edit-button, watch-edit-modal, watch-edit-modal-close.
+- ERFORDERT REDEPLOY für Production.

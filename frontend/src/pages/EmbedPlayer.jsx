@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import api from "../lib/api";
 import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
@@ -8,7 +8,8 @@ import { LanguageToggle } from "../components/LanguageToggle";
 import { AdSlot } from "../components/AdSlot";
 import { AdblockGate } from "../components/AdblockGate";
 import { VideoPlayer } from "../components/VideoPlayer";
-import { Film, Globe2, TrendingUp, ShieldAlert, Pencil } from "lucide-react";
+import { MirrorEditor } from "../components/MirrorEditor";
+import { Film, Globe2, TrendingUp, ShieldAlert, Pencil, X } from "lucide-react";
 
 const flagEmoji = (cc) => {
   if (!cc || cc.length !== 2 || !/^[a-zA-Z]{2}$/.test(cc)) return null;
@@ -26,7 +27,10 @@ export default function EmbedPlayer({ full = false }) {
   const { t, lang } = useI18n();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
   const rootRef = useRef(null);
+
+  const reload = () => api.get(`/embed/${slug}`).then((r) => setData(r.data)).catch(() => {});
 
   useEffect(() => {
     api.get(`/embed/${slug}`)
@@ -111,10 +115,10 @@ export default function EmbedPlayer({ full = false }) {
                 <TrendingUp size={14} /> {t("player.bestFirst")}
               </span>
               {data.can_edit && (
-                <Link to={`/dashboard/edit/${data.id}`} data-testid="watch-edit-button"
+                <button onClick={() => setEditOpen(true)} data-testid="watch-edit-button"
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-card border border-border hover:border-brand hover:text-brand transition-colors">
                   <Pencil size={14} /> {t("player.edit")}
-                </Link>
+                </button>
               )}
               <LanguageToggle />
               <ThemeToggle />
@@ -136,6 +140,20 @@ export default function EmbedPlayer({ full = false }) {
           <p className="mt-6 text-center text-xs text-muted-foreground font-mono">{t("player.poweredBy")} {settings.site_name}</p>
         )}
       </div>
+
+      {editOpen && data.can_edit && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto" data-testid="watch-edit-modal" onClick={() => setEditOpen(false)}>
+          <div className="bg-card border border-border rounded-lg w-full max-w-2xl my-8" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card rounded-t-lg z-10">
+              <h3 className="font-display font-bold text-lg">{t("form.edit")}</h3>
+              <button onClick={() => setEditOpen(false)} data-testid="watch-edit-modal-close" className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+            </div>
+            <div className="p-6">
+              <MirrorEditor id={data.id} onSuccess={() => { setEditOpen(false); reload(); }} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
