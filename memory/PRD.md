@@ -236,3 +236,13 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Bulk-URL-Import (Mirror erstellen/bearbeiten)**: Feld "Mehrere URLs einfuegen" + POST /mirrors/match-urls (Domain/Alias, sonst Namens-Token) fuellt automatisch die passenden Hoster-Felder; nicht zuordenbare werden als Toast gemeldet. Keys form.bulk*. Verifiziert per Screenshot.
 - Helper _match_host_for_domain/_norm_name im Backend. ERFORDERT REDEPLOY.
 - HINWEIS: Turnstile in PREVIEW-DB temporaer deaktiviert (Site-Gate-Widget laedt auf Preview-Domain nicht/Prod-Key). Production-Settings unberuehrt (separate DB).
+
+
+## Statistik-Bereich (neue Navi + gebündelte Auswertungen) (2026-06)
+- **Neuer Menüpunkt "Statistik"** links in der Navi (`DashboardLayout.jsx`, testid `nav-statistics`), führt auf neue Route `/dashboard/statistics` (`App.js` → `pages/Statistics.jsx`).
+- **Backend** `GET /api/stats/overview?period=today|7d|30d|all` (`server.py`, `_period_start_iso` + `_CC_EXPR`): liefert `total_views`, `total_earnings` (ROUGH-Schätzung), `top_countries`, `top_mirrors` (nach Views), `top_earning` (geschätzter Verdienst), `timeline` (Views/Tag), `top_hosts` (nach host_views). User-scoped (eigene Mirrors), Admin sieht alles. WICHTIG: `vmatch` schließt Tracker-Docs aus (`latest_host!=true` + `mirror_id` muss existieren), sonst KeyError bei Aggregation.
+- **Verdienst-Schätzung**: pro View (mirror_id, country_code) den höchsten Satz des besten ONLINE-Hosters für das Land (rate_for_country) / 1000. Bewusst grob (Hoster-Sätze haben unterschiedliche Einheiten $/1000 vs $/10k) — im UI klar als "ca./geschätzt" markiert (`statsov.estimateNote`).
+- **Zeitraum-Filter** (Heute / 7 Tage / 30 Tage / Gesamt) als Umschalter oben rechts (testid `stats-period-toggle`, `period-*`). Hinweis: `top_hosts` ist immer gesamt (host_views hat keinen Timestamp) — im UI vermerkt (`statsov.hostsNote`).
+- **Panels** (testids): `panel-timeline` (Recharts LineChart), `panel-top-mirrors`, `panel-top-earning`, `panel-countries`, `panel-top-hosts`. Top-Mirror/Verdienst-Einträge verlinken auf `/dashboard/stats/{id}`.
+- **"Views nach Land" aus dem Dashboard entfernt** und in die Statistik-Seite verschoben (CountryAnalytics-Komponente + Helfer aus `Dashboard.jsx` gelöscht). i18n `statsov.*` + `nav.statistics` (DE/EN).
+- Verifiziert: Backend curl alle 4 Zeiträume (all: 52 Views, ~$2.2; today: 0), Frontend-Screenshot (alle Panels rendern, Nav aktiv, Zeitraum-Toggle da). ERFORDERT REDEPLOY für Production.

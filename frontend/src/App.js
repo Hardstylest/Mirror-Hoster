@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import OfflineStreams from "./pages/OfflineStreams";
 import MirrorForm from "./pages/MirrorForm";
 import MirrorStats from "./pages/MirrorStats";
+import Statistics from "./pages/Statistics";
 import AdminDashboard from "./pages/AdminDashboard";
 import EmbedPlayer from "./pages/EmbedPlayer";
 import SetupWizard from "./pages/SetupWizard";
@@ -46,6 +47,7 @@ function App() {
                   <Route path="/watch/:slug" element={<EmbedPlayer full />} />
                   <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
                   <Route path="/dashboard/offline" element={<Protected><OfflineStreams /></Protected>} />
+                  <Route path="/dashboard/statistics" element={<Protected><Statistics /></Protected>} />
                   <Route path="/dashboard/new" element={<Protected><MirrorForm /></Protected>} />
                   <Route path="/dashboard/edit/:id" element={<Protected><MirrorForm /></Protected>} />
                   <Route path="/dashboard/stats/:id" element={<Protected><MirrorStats /></Protected>} />

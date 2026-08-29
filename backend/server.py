@@ -2175,6 +2175,117 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
             "links_online": online, "links_offline": offline, "links_pending": pending,
             "offline_mirrors": offline_mirrors, "top_countries": top_countries}
 
+def _period_start_iso(period: str):
+    now = datetime.now(timezone.utc)
+    if period == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "7d":
+        start = now - timedelta(days=7)
+    elif period == "30d":
+        start = now - timedelta(days=30)
+    else:
+        return None
+    return start.isoformat()
+
+_CC_EXPR = {"$toUpper": {"$cond": [{"$eq": [{"$ifNull": ["$country_code", ""]}, ""]}, "XX", "$country_code"]}}
+
+@api_router.get("/stats/overview")
+async def stats_overview(period: str = Query("all"), user: dict = Depends(get_current_user)):
+    """Bundled statistics: country views, top mirrors, estimated earnings, timeline, top hosts.
+    Earnings are a ROUGH estimate (rate/1000 per view, best online host per country)."""
+    is_admin = user.get("role") == "admin"
+    mquery = {} if is_admin else {"created_by": user["id"]}
+    mirrors = await db.mirrors.find(mquery).to_list(5000)
+    mirror_by_id = {m["id"]: m for m in mirrors}
+    mirror_ids = list(mirror_by_id.keys())
+
+    hosts = await db.hosts.find({}).to_list(500)
+    host_by_id = {h["id"]: h for h in hosts}
+
+    start = _period_start_iso(period)
+    vmatch = {"latest_host": {"$ne": True}, "mirror_id": {"$exists": True, "$ne": None}}
+    if not is_admin:
+        vmatch["mirror_id"] = {"$in": mirror_ids}
+    if start:
+        vmatch["timestamp"] = {"$gte": start}
+
+    country_agg = await db.views.aggregate([
+        {"$match": vmatch},
+        {"$group": {"_id": _CC_EXPR, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+        {"$limit": 12},
+    ]).to_list(12)
+    top_countries = [{"country_code": a["_id"] or "XX", "views": a["n"]} for a in country_agg]
+
+    mc_agg = await db.views.aggregate([
+        {"$match": vmatch},
+        {"$group": {"_id": {"m": "$mirror_id", "c": _CC_EXPR}, "n": {"$sum": 1}}},
+    ]).to_list(100000)
+
+    mirror_views, mirror_earn = {}, {}
+    for row in mc_agg:
+        mid, cc, n = row["_id"]["m"], row["_id"]["c"], row["n"]
+        mirror_views[mid] = mirror_views.get(mid, 0) + n
+        m = mirror_by_id.get(mid)
+        if not m:
+            continue
+        best = 0.0
+        for l in m.get("links", []):
+            if l.get("status") == "offline":
+                continue
+            h = host_by_id.get(l.get("host_id"))
+            if not h:
+                continue
+            r = rate_for_country(h, cc)
+            if r > best:
+                best = r
+        mirror_earn[mid] = mirror_earn.get(mid, 0.0) + (n * best / 1000.0)
+
+    def _mtitle(mid):
+        return mirror_by_id.get(mid, {}).get("title", "?")
+
+    def _mslug(mid):
+        return mirror_by_id.get(mid, {}).get("slug", "")
+
+    top_mirrors = sorted(
+        [{"id": mid, "title": _mtitle(mid), "slug": _mslug(mid), "views": v} for mid, v in mirror_views.items()],
+        key=lambda x: -x["views"])[:10]
+    top_earning = sorted(
+        [{"id": mid, "title": _mtitle(mid), "slug": _mslug(mid),
+          "earnings": round(e, 2), "views": mirror_views.get(mid, 0)} for mid, e in mirror_earn.items()],
+        key=lambda x: -x["earnings"])[:10]
+
+    tl_agg = await db.views.aggregate([
+        {"$match": vmatch},
+        {"$group": {"_id": {"$substr": ["$timestamp", 0, 10]}, "n": {"$sum": 1}}},
+        {"$sort": {"_id": 1}},
+    ]).to_list(400)
+    timeline = [{"date": a["_id"], "views": a["n"]} for a in tl_agg]
+
+    slugs = [m.get("slug") for m in mirrors]
+    hv_match = {} if is_admin else {"slug": {"$in": slugs}}
+    hv = await db.host_views.find(hv_match).to_list(100000)
+    host_totals = {}
+    for row in hv:
+        hid = row.get("host_id")
+        host_totals[hid] = host_totals.get(hid, 0) + int(row.get("count", 0) or 0)
+    top_hosts = sorted(
+        [{"host_name": host_by_id.get(hid, {}).get("name", hid or "?"),
+          "domain": host_by_id.get(hid, {}).get("domain", ""), "views": v}
+         for hid, v in host_totals.items() if v > 0],
+        key=lambda x: -x["views"])[:10]
+
+    return {
+        "period": period,
+        "total_views": sum(mirror_views.values()),
+        "total_earnings": round(sum(mirror_earn.values()), 2),
+        "top_countries": top_countries,
+        "top_mirrors": top_mirrors,
+        "top_earning": top_earning,
+        "timeline": timeline,
+        "top_hosts": top_hosts,
+    }
+
 @api_router.get("/admin/stats")
 async def admin_stats(admin: dict = Depends(get_admin_user)):
     total_users = await db.users.count_documents({})

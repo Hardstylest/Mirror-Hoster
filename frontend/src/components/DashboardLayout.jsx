@@ -6,7 +6,7 @@ import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
 import { ThemeToggle } from "./ThemeToggle";
 import { LanguageToggle } from "./LanguageToggle";
-import { LayoutDashboard, Shield, LogOut, Film, Plus, Menu, X, WifiOff } from "lucide-react";
+import { LayoutDashboard, Shield, LogOut, Film, Plus, Menu, X, WifiOff, BarChart3 } from "lucide-react";
 
 export const DashboardLayout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -26,6 +26,7 @@ export const DashboardLayout = ({ children }) => {
 
   const nav = [
     { to: "/dashboard", key: "my-mirrors", label: t("nav.myMirrors"), icon: LayoutDashboard },
+    { to: "/dashboard/statistics", key: "statistics", label: t("nav.statistics"), icon: BarChart3 },
     { to: "/dashboard/offline", key: "offline-streams", label: t("nav.offline"), icon: WifiOff, badge: offlineCount },
     ...(user?.role === "admin" ? [{ to: "/admin", key: "admin-panel", label: t("nav.adminPanel"), icon: Shield }] : []),
   ];
@@ -66,7 +67,7 @@ export const DashboardLayout = ({ children }) => {
         </div>
         <nav className="flex-1 p-4 space-y-1">
           {nav.map((n) => {
-            const active = location.pathname === n.to || (n.to === "/dashboard" && location.pathname.startsWith("/dashboard") && location.pathname !== "/dashboard/offline");
+            const active = location.pathname === n.to || (n.to === "/dashboard" && location.pathname.startsWith("/dashboard") && location.pathname !== "/dashboard/offline" && location.pathname !== "/dashboard/statistics");
             return (
               <Link
                 key={n.to}
