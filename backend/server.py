@@ -423,7 +423,7 @@ def normalize_embed_url(url: str) -> str:
         parts = [p for p in u.path.split("/") if p]
         if not parts:
             return url
-        prefixes = {"d", "f", "v", "e", "embed"}
+        prefixes = {"d", "f", "v", "e", "embed", "watch"}
         if parts[0].lower() in prefixes:
             new_path = "/e/" + "/".join(parts[1:])
         elif len(parts) == 1:
