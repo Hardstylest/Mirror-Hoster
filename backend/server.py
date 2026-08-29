@@ -424,10 +424,13 @@ def normalize_embed_url(url: str) -> str:
         if not parts:
             return url
         prefixes = {"d", "f", "v", "e", "embed", "watch"}
+        # Most hosts use /e/ as the slim embed path; a few (e.g. Playmate) 404 on /e/
+        # and require /embed/ instead.
+        embed_seg = "embed" if "playmate." in (u.netloc or "").lower() else "e"
         if parts[0].lower() in prefixes:
-            new_path = "/e/" + "/".join(parts[1:])
+            new_path = f"/{embed_seg}/" + "/".join(parts[1:])
         elif len(parts) == 1:
-            new_path = f"/e/{parts[0]}"
+            new_path = f"/{embed_seg}/{parts[0]}"
         else:
             return raw  # unknown pattern, leave untouched
         return urlunparse((u.scheme or "https", u.netloc, new_path, "", u.query, ""))
@@ -579,7 +582,7 @@ def api_resolve_link(provider: str, embed_url: str, api_key: Optional[str] = Non
             ires = (info.get("result") or [{}])[0]
             online = ires.get("status") == 200 or str(ires.get("canplay")) in ("1", "True", "true")
             return {"status": "online" if online else "offline",
-                    "url": f"https://playmate.to/e/{code}",
+                    "url": f"https://playmate.to/embed/{code}",
                     "title": ires.get("name") or ires.get("title"), "thumbnail": None}
         if provider == "vidara":
             if not api_key:
@@ -1010,7 +1013,7 @@ def find_replacement(provider: str, key: str, title: str, host: Optional[dict] =
             if provider == "playmate":
                 d = _api_json(f"https://api.playmate.to/file/search?key={key}&q={q}&per_page=100")
                 data = d.get("result") or []
-                embed = "https://playmate.to/e/"
+                embed = "https://playmate.to/embed/"
             elif provider == "vidara":
                 d = _api_json(f"https://api.vidara.so/v1/video/list?api_key={key}&title={q}&limit=200")
                 res = d.get("result") or {}
