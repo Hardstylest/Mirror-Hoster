@@ -2096,7 +2096,16 @@ async def get_embed(slug: str, request: Request, country: Optional[str] = Query(
     }
 
 @api_router.post("/embed/{slug}/host-view/{host_id}")
-async def record_host_view(slug: str, host_id: str):
+async def record_host_view(slug: str, host_id: str, request: Request):
+    cf_cc = (request.headers.get("cf-ipcountry") or "").upper()
+    if cf_cc and cf_cc not in ("XX", "T1"):
+        cc = cf_cc
+    else:
+        try:
+            geo = await asyncio.to_thread(geolocate, get_geo_ip(request))
+            cc = (geo.get("country_code") or "XX").upper()
+        except Exception:
+            cc = "XX"
     await db.views.update_one(
         {"latest_host": True, "mirror_slug": slug},
         {"$inc": {"count": 1}}, upsert=True)
@@ -2107,6 +2116,7 @@ async def record_host_view(slug: str, host_id: str):
         "id": str(uuid.uuid4()),
         "slug": slug,
         "host_id": host_id,
+        "country_code": cc,
         "timestamp": now_iso(),
     })
     return {"ok": True}
@@ -2228,24 +2238,31 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
         {"$group": {"_id": {"m": "$mirror_id", "c": _CC_EXPR}, "n": {"$sum": 1}}},
     ]).to_list(100000)
 
+    _rate_cache = {}
+    def best_rate(mid, cc):
+        key = (mid, cc)
+        if key in _rate_cache:
+            return _rate_cache[key]
+        m = mirror_by_id.get(mid)
+        best = 0.0
+        if m:
+            for l in m.get("links", []):
+                if l.get("status") == "offline":
+                    continue
+                h = host_by_id.get(l.get("host_id"))
+                if not h:
+                    continue
+                r = rate_for_country(h, cc)
+                if r > best:
+                    best = r
+        _rate_cache[key] = best
+        return best
+
     mirror_views, mirror_earn, country_earn = {}, {}, {}
     for row in mc_agg:
         mid, cc, n = row["_id"]["m"], row["_id"]["c"], row["n"]
         mirror_views[mid] = mirror_views.get(mid, 0) + n
-        m = mirror_by_id.get(mid)
-        if not m:
-            continue
-        best = 0.0
-        for l in m.get("links", []):
-            if l.get("status") == "offline":
-                continue
-            h = host_by_id.get(l.get("host_id"))
-            if not h:
-                continue
-            r = rate_for_country(h, cc)
-            if r > best:
-                best = r
-        earn = n * best / 1000.0
+        earn = n * best_rate(mid, cc) / 1000.0
         mirror_earn[mid] = mirror_earn.get(mid, 0.0) + earn
         country_earn[cc] = country_earn.get(cc, 0.0) + earn
 
@@ -2266,12 +2283,18 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
         [{"country_code": cc or "XX", "earnings": round(e, 2)} for cc, e in country_earn.items() if e > 0],
         key=lambda x: -x["earnings"])[:12]
 
-    tl_agg = await db.views.aggregate([
+    # timeline with views + estimated earnings per day
+    dmc_agg = await db.views.aggregate([
         {"$match": vmatch},
-        {"$group": {"_id": {"$substr": ["$timestamp", 0, 10]}, "n": {"$sum": 1}}},
-        {"$sort": {"_id": 1}},
-    ]).to_list(400)
-    timeline = [{"date": a["_id"], "views": a["n"]} for a in tl_agg]
+        {"$group": {"_id": {"d": {"$substr": ["$timestamp", 0, 10]}, "m": "$mirror_id", "c": _CC_EXPR}, "n": {"$sum": 1}}},
+    ]).to_list(200000)
+    day_views, day_earn = {}, {}
+    for row in dmc_agg:
+        d, mid, cc, n = row["_id"]["d"], row["_id"]["m"], row["_id"]["c"], row["n"]
+        day_views[d] = day_views.get(d, 0) + n
+        day_earn[d] = day_earn.get(d, 0.0) + n * best_rate(mid, cc) / 1000.0
+    timeline = [{"date": d, "views": day_views[d], "earnings": round(day_earn.get(d, 0.0), 2)}
+                for d in sorted(day_views.keys())]
 
     slugs = [m.get("slug") for m in mirrors]
     host_totals = {}
@@ -2298,6 +2321,26 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
          for hid, v in host_totals.items() if v > 0],
         key=lambda x: -x["views"])[:10]
 
+    # which hoster is played most per country (from timestamped host-view events)
+    hbc_match = {}
+    if not is_admin:
+        hbc_match["slug"] = {"$in": slugs}
+    if start:
+        hbc_match["timestamp"] = {"$gte": start}
+    hbc_agg = await db.host_view_events.aggregate([
+        {"$match": hbc_match},
+        {"$group": {"_id": {"c": _CC_EXPR, "h": "$host_id"}, "n": {"$sum": 1}}},
+        {"$sort": {"n": -1}},
+    ]).to_list(5000)
+    hbc = {}
+    for row in hbc_agg:
+        cc, hid, n = row["_id"]["c"], row["_id"]["h"], row["n"]
+        hbc.setdefault(cc, {"country_code": cc or "XX", "total": 0, "hosts": []})
+        hbc[cc]["total"] += n
+        if len(hbc[cc]["hosts"]) < 4:
+            hbc[cc]["hosts"].append({"host_name": host_by_id.get(hid, {}).get("name", hid or "?"), "views": n})
+    hosts_by_country = sorted(hbc.values(), key=lambda x: -x["total"])[:10]
+
     return {
         "period": period,
         "total_views": sum(mirror_views.values()),
@@ -2308,6 +2351,7 @@ async def stats_overview(period: str = Query("all"), user: dict = Depends(get_cu
         "top_earning": top_earning,
         "timeline": timeline,
         "top_hosts": top_hosts,
+        "hosts_by_country": hosts_by_country,
     }
 
 @api_router.get("/admin/stats")

@@ -5,7 +5,7 @@ import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
 import { useTheme } from "../context/ThemeContext";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { BarChart3, Eye, Globe2, TrendingUp, DollarSign, Server, Film, Info } from "lucide-react";
 
@@ -86,6 +86,7 @@ export default function Statistics() {
   const mirrors = data?.top_mirrors || [];
   const earning = data?.top_earning || [];
   const hosts = data?.top_hosts || [];
+  const hostsByCountry = data?.hosts_by_country || [];
   const timeline = data?.timeline || [];
   const cMax = Math.max(1, ...countries.map((c) => c.views));
   const ecMax = Math.max(1, ...earnCountries.map((c) => c.earnings));
@@ -122,13 +123,16 @@ export default function Statistics() {
 
             <Panel icon={TrendingUp} title={t("statsov.overTime")} testid="panel-timeline">
               {timeline.length === 0 ? <p className="text-muted-foreground text-sm">{t("statsov.noViews")}</p> : (
-                <ResponsiveContainer width="100%" height={260}>
+                <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={timeline}>
                     <CartesianGrid strokeDasharray="3 3" stroke={grid} />
                     <XAxis dataKey="date" stroke={axis} fontSize={12} />
-                    <YAxis stroke={axis} fontSize={12} allowDecimals={false} />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Line type="monotone" dataKey="views" stroke="#48C7F2" strokeWidth={2.5} dot={{ fill: "#48C7F2", r: 3 }} />
+                    <YAxis yAxisId="v" stroke={axis} fontSize={12} allowDecimals={false} />
+                    <YAxis yAxisId="e" orientation="right" stroke="#22C55E" fontSize={12} tickFormatter={(v) => `$${v}`} />
+                    <Tooltip contentStyle={tooltipStyle} formatter={(val, name) => name === t("statsov.earnLine") ? `~$${val}` : val} />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Line yAxisId="v" type="monotone" dataKey="views" name={t("statsov.viewsLine")} stroke="#48C7F2" strokeWidth={2.5} dot={{ fill: "#48C7F2", r: 3 }} />
+                    <Line yAxisId="e" type="monotone" dataKey="earnings" name={t("statsov.earnLine")} stroke="#22C55E" strokeWidth={2.5} dot={{ fill: "#22C55E", r: 3 }} />
                   </LineChart>
                 </ResponsiveContainer>
               )}
@@ -193,6 +197,36 @@ export default function Statistics() {
                       <RankBar key={h.host_name + i} testid={`top-host-${i}`}
                         label={h.host_name} sub={h.domain} value={h.views} max={hMax} />
                     ))}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel icon={Globe2} title={t("statsov.hostByCountry")} note={t("statsov.hostByCountryNote")} testid="panel-host-country">
+                {hostsByCountry.length === 0 ? <p className="text-muted-foreground text-sm">{t("statsov.empty")}</p> : (
+                  <div className="space-y-4">
+                    {hostsByCountry.map((c) => {
+                      const cmax = Math.max(1, ...c.hosts.map((h) => h.views));
+                      return (
+                        <div key={c.country_code} data-testid={`host-country-${c.country_code}`}>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-base leading-none" aria-hidden>{flagEmoji(c.country_code) || "🌐"}</span>
+                            <span className="text-sm font-medium">{c.country_code === "XX" ? t("dash.countries.unknown") : countryName(c.country_code, lang)}</span>
+                            <span className="text-xs text-muted-foreground">· {c.total} {t("statsov.viewsSuffix")}</span>
+                          </div>
+                          <div className="space-y-1.5 pl-6">
+                            {c.hosts.map((h, i) => (
+                              <div key={h.host_name + i} className="flex items-center gap-3">
+                                <span className={`w-28 truncate text-sm shrink-0 ${i === 0 ? "text-brand font-medium" : ""}`} title={h.host_name}>{h.host_name}</span>
+                                <div className="flex-1 h-2 rounded-full bg-surface overflow-hidden">
+                                  <div className={`h-full rounded-full ${i === 0 ? "bg-brand" : "bg-brand/40"}`} style={{ width: `${Math.max(4, (h.views / cmax) * 100)}%` }} />
+                                </div>
+                                <span className="w-12 text-right text-sm font-mono tabular-nums shrink-0">{h.views}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </Panel>
