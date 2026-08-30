@@ -304,3 +304,10 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - Fix (`server.py`): `/api/health` gibt jetzt sofort `{"status":"ok"}` ohne DB/externe Calls zurück. Neuer `_run_startup()` läuft als Hintergrund-Task (`asyncio.create_task` im `on_startup`) — seed + Scheduler (offline_checker/tier_updater/backup_scheduler) starten NACH dem Akzeptieren von Verbindungen, nicht davor. seed in try/except gekapselt.
 - Verifiziert: nach `restart backend` liefert /api/health sofort HTTP 200 (~0.13s); "Application startup complete" erscheint sofort, Tier-Update ~4s später im Hintergrund; login/mirrors/hosts/settings alle 200.
 - Hinweis: `/api/health` ist der relevante Endpunkt (Top-Level /health würde ans Frontend routen). ERFORDERT REDEPLOY für Production.
+
+## Warm-up + System-Status-Panel (2026-06)
+- **Warm-up (Task 1)**: `_warmup()` in server.py läuft in `_run_startup` NACH seed (im Hintergrund): DB-ping + mirrors.count + hosts.find + settings.find_one, damit Connection-Pool/Query-Planner vor der ersten echten Anfrage warm sind. Log "Warm-up queries completed".
+- **System-Status (Task 2)**: Neuer Endpoint `GET /api/admin/health` (admin-only): db_ok + db_ping_ms, started_at (globaler `_app_started_at`, in on_startup gesetzt), counts (mirrors/hosts/users/offline_mirrors), last_backup_at/status, backup_schedule, last_tier_update_at (aus settings; Fallback = jüngstes host.tiers_updated_at). tier_updater schreibt jetzt `last_tier_update_at` in settings nach jedem Lauf.
+- Admin-UI: `<SystemHealth>` in AdminDashboard.jsx, gerendert im Übersicht-Tab unter den StatCards (testid `system-health`, Zeilen health-db/backup/tier/started/offline, Refresh-Button `health-refresh`). Lädt via `loadHealth()` bei Tab-Wechsel auf overview. Zeigt farbige Status-Dots, absolute + relative Zeit ("vor X Min./Std./Tg."). i18n `admin.health.*` (DE/EN). Icons Activity/Database ergänzt.
+- Verifiziert: curl /api/admin/health (db_ok true, ping 0ms, counts, last_backup 2026-07-31 ok, last_tier_update aktuell), Warm-up-Log, Screenshot (System-Status-Karte im Übersicht-Tab).
+- ERFORDERT REDEPLOY für Production.

@@ -10,7 +10,7 @@ import {
   Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup, Search, Eraser, History, Code2,
 } from "lucide-react";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Activity, Database } from "lucide-react";
 
 const TIER_SCRAPER_PROVIDERS = ["doodstream", "voe", "firestream", "playmate", "vidara", "vinovo", "vidnest"];
 
@@ -36,6 +36,64 @@ const CodeWarn = ({ code, de }) => {
       <ul className="mt-1 list-disc list-inside space-y-0.5">
         {issues.map((i, k) => <li key={k} className="text-xs text-amber-500/90">{i}</li>)}
       </ul>
+    </div>
+  );
+};
+
+// Compact system health panel for the admin overview.
+const SystemHealth = ({ health, onRefresh, t, lang }) => {
+  const fmt = (iso) => {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString(lang === "de" ? "de-DE" : "en-US", { dateStyle: "medium", timeStyle: "short" }); }
+    catch { return iso; }
+  };
+  const ago = (iso) => {
+    if (!iso) return null;
+    const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60);
+    if (d) return lang === "de" ? `vor ${d} Tg.` : `${d}d ago`;
+    if (h) return lang === "de" ? `vor ${h} Std.` : `${h}h ago`;
+    return lang === "de" ? `vor ${m} Min.` : `${m}m ago`;
+  };
+  const Row = ({ icon: Icon, label, children, testid }) => (
+    <div className="flex items-center justify-between py-3 border-b border-border/60 last:border-0" data-testid={testid}>
+      <span className="flex items-center gap-2 text-sm text-muted-foreground"><Icon size={15} className="text-brand" /> {label}</span>
+      <span className="text-sm text-right">{children}</span>
+    </div>
+  );
+  const Dot = ({ ok }) => <span className={`inline-block w-2 h-2 rounded-full ${ok ? "bg-online" : "bg-offline"}`} />;
+  const backupOk = health.last_backup_status === "ok";
+  return (
+    <div className="bg-card border border-border rounded-lg p-6" data-testid="system-health">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-display font-bold text-lg flex items-center gap-2"><Activity size={18} className="text-brand" /> {t("admin.health.title")}</h3>
+        <button onClick={onRefresh} data-testid="health-refresh" className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><RefreshCw size={16} /></button>
+      </div>
+      <Row icon={Database} label={t("admin.health.database")} testid="health-db">
+        <span className="inline-flex items-center gap-2">
+          <Dot ok={health.db_ok} /> {health.db_ok ? t("admin.health.online") : t("admin.health.offline")}
+          <span className="text-xs text-muted-foreground font-mono">{health.db_ping_ms}ms</span>
+        </span>
+      </Row>
+      <Row icon={DatabaseBackup} label={t("admin.health.lastBackup")} testid="health-backup">
+        {health.last_backup_at ? (
+          <span className="inline-flex items-center gap-2">
+            <Dot ok={backupOk} /> {fmt(health.last_backup_at)}
+            <span className="text-xs text-muted-foreground">({ago(health.last_backup_at)})</span>
+          </span>
+        ) : <span className="text-muted-foreground">{t("admin.health.never")}</span>}
+      </Row>
+      <Row icon={History} label={t("admin.health.lastTier")} testid="health-tier">
+        {health.last_tier_update_at ? (
+          <span>{fmt(health.last_tier_update_at)} <span className="text-xs text-muted-foreground">({ago(health.last_tier_update_at)})</span></span>
+        ) : <span className="text-muted-foreground">{t("admin.health.never")}</span>}
+      </Row>
+      <Row icon={Server} label={t("admin.health.started")} testid="health-started">
+        {fmt(health.started_at)} <span className="text-xs text-muted-foreground">({ago(health.started_at)})</span>
+      </Row>
+      <Row icon={WifiOff} label={t("admin.health.offlineMirrors")} testid="health-offline">
+        {health.counts?.offline_mirrors ?? 0}
+      </Row>
     </div>
   );
 };
@@ -465,6 +523,9 @@ export default function AdminDashboard() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (tab === "security") loadAlerts(); }, [tab, loadAlerts]);
+  const [health, setHealth] = useState(null);
+  const loadHealth = useCallback(() => { api.get("/admin/health").then((r) => setHealth(r.data)).catch(() => {}); }, []);
+  useEffect(() => { if (tab === "overview") loadHealth(); }, [tab, loadHealth]);
   useEffect(() => { const cfg = adminSettings; setSiteForm({
     site_name: cfg.site_name || "", tagline: cfg.tagline || "",
     description: cfg.description || "", footer_text: cfg.footer_text || "",
@@ -630,12 +691,15 @@ export default function AdminDashboard() {
         </div>
 
         {tab === "overview" && stats && (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-            <StatCard icon={Users} label={t("admin.stat.users")} value={stats.total_users} />
-            <StatCard icon={Film} label={t("admin.stat.mirrors")} value={stats.total_mirrors} />
-            <StatCard icon={Server} label={t("admin.stat.hosts")} value={stats.total_hosts} />
-            <StatCard icon={Eye} label={t("admin.stat.totalViews")} value={stats.total_views} />
-            <StatCard icon={WifiOff} label={t("admin.stat.offlineLinks")} value={stats.offline_links} />
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <StatCard icon={Users} label={t("admin.stat.users")} value={stats.total_users} />
+              <StatCard icon={Film} label={t("admin.stat.mirrors")} value={stats.total_mirrors} />
+              <StatCard icon={Server} label={t("admin.stat.hosts")} value={stats.total_hosts} />
+              <StatCard icon={Eye} label={t("admin.stat.totalViews")} value={stats.total_views} />
+              <StatCard icon={WifiOff} label={t("admin.stat.offlineLinks")} value={stats.offline_links} />
+            </div>
+            {health && <SystemHealth health={health} onRefresh={loadHealth} t={t} lang={lang} />}
           </div>
         )}
 

@@ -44,6 +44,7 @@ JWT_ALGORITHM = "HS256"
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+_app_started_at = None
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -2573,6 +2574,35 @@ async def health():
     # brief post-deploy window where a not-yet-ready backend caused Cloudflare 520s).
     return {"status": "ok"}
 
+@api_router.get("/admin/health")
+async def admin_health(admin: dict = Depends(get_admin_user)):
+    db_ok = True
+    t0 = time.time()
+    try:
+        await client.admin.command("ping")
+    except Exception:
+        db_ok = False
+    ping_ms = round((time.time() - t0) * 1000)
+    s = await db.settings.find_one({"key": "site"}) or {}
+    counts = {
+        "mirrors": await db.mirrors.count_documents({}),
+        "hosts": await db.hosts.count_documents({}),
+        "users": await db.users.count_documents({}),
+        "offline_mirrors": await db.mirrors.count_documents({"links.status": "offline"}),
+    }
+    latest = await db.hosts.find({"tiers_updated_at": {"$exists": True}}).sort("tiers_updated_at", -1).limit(1).to_list(1)
+    host_tier_at = latest[0]["tiers_updated_at"] if latest else None
+    return {
+        "db_ok": db_ok,
+        "db_ping_ms": ping_ms,
+        "started_at": _app_started_at,
+        "counts": counts,
+        "last_backup_at": s.get("last_backup_at"),
+        "last_backup_status": s.get("last_backup_status"),
+        "backup_schedule": s.get("backup_schedule", "off"),
+        "last_tier_update_at": s.get("last_tier_update_at") or host_tier_at,
+    }
+
 @api_router.get("/setup/status")
 async def setup_status():
     db_connected = True
@@ -3285,10 +3315,23 @@ async def tier_updater():
             hosts = await db.hosts.find({"api_provider": {"$in": list(TIER_SCRAPERS.keys())}}).to_list(100)
             for h in hosts:
                 await refresh_host_tiers(h)
+            await db.settings.update_one({"key": "site"}, {"$set": {"last_tier_update_at": now_iso()}})
             logger.info("Tier auto-update completed")
         except Exception as e:
             logger.error(f"Tier updater error: {e}")
         await asyncio.sleep(interval)
+
+async def _warmup():
+    # Fire the most common queries once so the DB connection pool and query planner are hot
+    # before the first real user request lands (reduces first-hit latency after a deploy).
+    try:
+        await client.admin.command("ping")
+        await db.mirrors.count_documents({})
+        await db.hosts.find({}).to_list(500)
+        await db.settings.find_one({"key": "site"})
+        logger.info("Warm-up queries completed")
+    except Exception as e:
+        logger.error(f"Warm-up failed: {e}")
 
 async def _run_startup():
     # Runs off the critical path so the server accepts connections immediately after boot.
@@ -3298,12 +3341,15 @@ async def _run_startup():
         await seed()
     except Exception as e:
         logger.error(f"Startup seed failed: {e}")
+    await _warmup()
     asyncio.create_task(offline_checker())
     asyncio.create_task(tier_updater())
     asyncio.create_task(backup_scheduler())
 
 @app.on_event("startup")
 async def on_startup():
+    global _app_started_at
+    _app_started_at = now_iso()
     asyncio.create_task(_run_startup())
 
 @app.on_event("shutdown")
