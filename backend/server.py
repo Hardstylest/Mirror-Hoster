@@ -2464,6 +2464,14 @@ class SettingsInput(BaseModel):
     ad_preroll: str = ""
     ad_preroll_enabled: bool = False
     ad_preroll_seconds: int = 8
+    ad_preroll_repeat_enabled: bool = False
+    ad_preroll_repeat_minutes: int = 10
+    ad_postroll_enabled: bool = False
+    ad_postroll: str = ""
+    ad_postroll_minutes: int = 30
+    verify_google: str = ""
+    verify_bing: str = ""
+    verify_juicyads: str = ""
     turnstile_enabled: bool = False
     turnstile_site_key: str = ""
     turnstile_secret_key: str = ""  # blank on save = keep existing secret
@@ -2490,6 +2498,9 @@ PUBLIC_SETTINGS_KEYS = {
     "ad_header", "ad_footer", "ad_player_top", "ad_player_bottom",
     "custom_head", "custom_footer",
     "ad_preroll", "ad_preroll_enabled", "ad_preroll_seconds",
+    "ad_preroll_repeat_enabled", "ad_preroll_repeat_minutes",
+    "ad_postroll_enabled", "ad_postroll", "ad_postroll_minutes",
+    "verify_google", "verify_bing", "verify_juicyads",
     "turnstile_enabled", "turnstile_site_key", "turnstile_login", "turnstile_register", "turnstile_gate",
     "antiadblock_enabled", "antiadblock_mode", "registration_open",
 }
@@ -2687,6 +2698,14 @@ DEFAULT_SETTINGS = {
     "ad_preroll": "",
     "ad_preroll_enabled": False,
     "ad_preroll_seconds": 8,
+    "ad_preroll_repeat_enabled": False,
+    "ad_preroll_repeat_minutes": 10,
+    "ad_postroll_enabled": False,
+    "ad_postroll": "",
+    "ad_postroll_minutes": 30,
+    "verify_google": "",
+    "verify_bing": "",
+    "verify_juicyads": "",
     "turnstile_enabled": False,
     "turnstile_site_key": "",
     "turnstile_login": True,

@@ -4,13 +4,18 @@ import { useI18n } from "../context/I18nContext";
 import { AdSlot } from "./AdSlot";
 import { Wifi, WifiOff, Play, SkipForward } from "lucide-react";
 
-export const VideoPlayer = ({ hosts, onHostView, poster, preroll, fill = false }) => {
+export const VideoPlayer = ({ hosts, onHostView, poster, preroll, ads, fill = false }) => {
   const { t } = useI18n();
   const [active, setActive] = useState(0);
   const [started, setStarted] = useState(false);
   const [prerollActive, setPrerollActive] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [overlayAd, setOverlayAd] = useState(null); // { html, seconds }
+  const [overlayCountdown, setOverlayCountdown] = useState(0);
   const timerRef = useRef(null);
+  const repeatRef = useRef(null);
+  const postrollRef = useRef(null);
+  const ocRef = useRef(null);
 
   const prerollEnabled = !!(preroll?.enabled && preroll?.html);
   const prerollSeconds = Math.max(0, parseInt(preroll?.seconds, 10) || 0);
@@ -19,10 +24,45 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll, fill = false }
     setActive(0);
     setStarted(false);
     setPrerollActive(false);
+    setOverlayAd(null);
     clearInterval(timerRef.current);
+    clearInterval(repeatRef.current);
+    clearTimeout(postrollRef.current);
+    clearInterval(ocRef.current);
   }, [hosts]);
 
-  useEffect(() => () => clearInterval(timerRef.current), []);
+  useEffect(() => () => {
+    clearInterval(timerRef.current); clearInterval(repeatRef.current);
+    clearTimeout(postrollRef.current); clearInterval(ocRef.current);
+  }, []);
+
+  // Recurring pre-roll + timed post-roll overlays (shown on top of the running stream).
+  useEffect(() => {
+    if (!started || !ads) return;
+    const repMin = Math.max(0, parseInt(ads.repeatMinutes, 10) || 0);
+    const postMin = Math.max(0, parseInt(ads.postrollMinutes, 10) || 0);
+    if (ads.repeatEnabled && ads.repeatHtml && repMin > 0) {
+      repeatRef.current = setInterval(() => {
+        setOverlayAd((cur) => cur || { html: ads.repeatHtml, seconds: Math.max(0, parseInt(ads.repeatSeconds, 10) || 0) });
+      }, repMin * 60000);
+    }
+    if (ads.postrollEnabled && ads.postrollHtml && postMin > 0) {
+      postrollRef.current = setTimeout(() => {
+        setOverlayAd((cur) => cur || { html: ads.postrollHtml, seconds: Math.max(0, parseInt(ads.postrollSeconds, 10) || 0) });
+      }, postMin * 60000);
+    }
+    return () => { clearInterval(repeatRef.current); clearTimeout(postrollRef.current); };
+  }, [started, ads]);
+
+  useEffect(() => {
+    if (!overlayAd) { clearInterval(ocRef.current); return; }
+    setOverlayCountdown(overlayAd.seconds);
+    clearInterval(ocRef.current);
+    ocRef.current = setInterval(() => {
+      setOverlayCountdown((c) => { if (c <= 1) { clearInterval(ocRef.current); return 0; } return c - 1; });
+    }, 1000);
+    return () => clearInterval(ocRef.current);
+  }, [overlayAd]);
 
   if (!hosts || hosts.length === 0) {
     return (
@@ -110,17 +150,41 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll, fill = false }
             <p className="text-sm text-zinc-400">{t("player.selectOther")}</p>
           </div>
         ) : started ? (
-          <iframe
-            key={current.embed_url}
-            src={current.embed_url}
-            title={current.host_name}
-            className="w-full h-full"
-            frameBorder="0"
-            scrolling="no"
-            allowFullScreen
-            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-            referrerPolicy="no-referrer"
-          />
+          <>
+            <iframe
+              key={current.embed_url}
+              src={current.embed_url}
+              title={current.host_name}
+              className="w-full h-full"
+              frameBorder="0"
+              scrolling="no"
+              allowFullScreen
+              allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+              referrerPolicy="no-referrer"
+            />
+            {overlayAd && (
+              <div className="absolute inset-0 bg-black flex items-center justify-center p-2 z-20" data-testid="recurring-ad-overlay">
+                <span className="absolute top-2 left-3 z-10 text-[11px] uppercase tracking-wider text-zinc-400 font-mono pointer-events-none">
+                  {t("player.adLabel")}
+                </span>
+                <div className="max-w-full max-h-full overflow-auto flex items-center justify-center">
+                  <AdSlot html={overlayAd.html} testid="recurring-ad" className="flex items-center justify-center" />
+                </div>
+                <div className="absolute bottom-3 right-3 z-10">
+                  {overlayCountdown > 0 ? (
+                    <span data-testid="recurring-countdown" className="px-3 py-1.5 rounded-md bg-black/70 text-zinc-300 text-sm font-mono border border-white/10">
+                      {t("player.adCountdown").replace("{s}", overlayCountdown)}
+                    </span>
+                  ) : (
+                    <button onClick={() => setOverlayAd(null)} data-testid="recurring-skip"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover transition-colors shadow-2xl">
+                      <SkipForward size={16} /> {t("player.adSkip")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         ) : prerollActive ? (
           /* Pre-roll ad overlay: shown after click, before the stream iframe loads */
           <div className="absolute inset-0 bg-black flex items-center justify-center p-2" data-testid="preroll-overlay">

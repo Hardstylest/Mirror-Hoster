@@ -9,7 +9,36 @@ import {
   Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup, Search, Eraser, History, Code2,
 } from "lucide-react";
 
+import { AlertTriangle } from "lucide-react";
+
 const TIER_SCRAPER_PROVIDERS = ["doodstream", "voe", "firestream", "playmate", "vidara", "vinovo", "vidnest"];
+
+// Lightweight sanity check for pasted raw HTML/JS snippets.
+const codeIssues = (code, de) => {
+  const c = (code || "").trim();
+  if (!c) return [];
+  const n = (re) => (c.match(re) || []).length;
+  const out = [];
+  if (n(/<script\b/gi) !== n(/<\/script>/gi)) out.push(de ? "Ungleiche Anzahl von <script> und </script>." : "Unbalanced <script> / </script> tags.");
+  if (n(/<style\b/gi) !== n(/<\/style>/gi)) out.push(de ? "Ungleiche Anzahl von <style> und </style>." : "Unbalanced <style> / </style> tags.");
+  if (n(/</g) !== n(/>/g)) out.push(de ? "Ungleiche Anzahl von < und > (evtl. offenes Tag)." : "Unbalanced < and > characters (possibly an open tag).");
+  if (/<[^>]*$/.test(c)) out.push(de ? "Der Code endet mit einem offenen Tag." : "Code ends with an open tag.");
+  return out;
+};
+
+const CodeWarn = ({ code, de }) => {
+  const issues = codeIssues(code, de);
+  if (!issues.length) return null;
+  return (
+    <div data-testid="code-warning" className="mt-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+      <p className="flex items-center gap-1.5 text-xs font-medium text-amber-500"><AlertTriangle size={13} /> {de ? "Möglicherweise unvollständiger Code:" : "Code may be incomplete:"}</p>
+      <ul className="mt-1 list-disc list-inside space-y-0.5">
+        {issues.map((i, k) => <li key={k} className="text-xs text-amber-500/90">{i}</li>)}
+      </ul>
+    </div>
+  );
+};
+
 
 
 const emptyHost = { name: "", domain: "", aliases: "", default_rate: 5, is_active: true, api_provider: "", api_key: "", login_email: "", login_password: "", tiers: [] };
@@ -408,6 +437,14 @@ export default function AdminDashboard() {
     ad_preroll: cfg.ad_preroll || "",
     ad_preroll_enabled: !!cfg.ad_preroll_enabled,
     ad_preroll_seconds: cfg.ad_preroll_seconds ?? 8,
+    ad_preroll_repeat_enabled: !!cfg.ad_preroll_repeat_enabled,
+    ad_preroll_repeat_minutes: cfg.ad_preroll_repeat_minutes ?? 10,
+    ad_postroll_enabled: !!cfg.ad_postroll_enabled,
+    ad_postroll: cfg.ad_postroll || "",
+    ad_postroll_minutes: cfg.ad_postroll_minutes ?? 30,
+    verify_google: cfg.verify_google || "",
+    verify_bing: cfg.verify_bing || "",
+    verify_juicyads: cfg.verify_juicyads || "",
     turnstile_enabled: !!cfg.turnstile_enabled,
     turnstile_site_key: cfg.turnstile_site_key || "",
     turnstile_secret_key: "",
@@ -534,6 +571,7 @@ export default function AdminDashboard() {
     { id: "users", label: t("admin.tab.users") },
     { id: "settings", label: t("admin.tab.settings") },
     { id: "ads", label: t("admin.tab.ads") },
+    { id: "verify", label: t("admin.tab.verify") },
     { id: "security", label: lang === "de" ? "Sicherheit" : "Security" },
     { id: "backup", label: "Backup" },
   ];
@@ -772,6 +810,7 @@ export default function AdminDashboard() {
               <textarea data-testid="setting-custom-head" rows={4} value={siteForm.custom_head} onChange={(e) => setSiteForm({ ...siteForm, custom_head: e.target.value })}
                 placeholder={'<meta name="..." content="..." />\n<script>…</script>'}
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              <CodeWarn code={siteForm.custom_head} de={lang === "de"} />
             </div>
             <div>
               <label className="text-sm font-medium flex items-center gap-2"><Code2 size={15} className="text-brand" /> {t("admin.settings.customFooter")}</label>
@@ -779,6 +818,7 @@ export default function AdminDashboard() {
               <textarea data-testid="setting-custom-footer" rows={4} value={siteForm.custom_footer} onChange={(e) => setSiteForm({ ...siteForm, custom_footer: e.target.value })}
                 placeholder={'<script>…</script>'}
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              <CodeWarn code={siteForm.custom_footer} de={lang === "de"} />
             </div>
             <button onClick={saveSite} disabled={savingSite} data-testid="save-settings-button"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
@@ -817,6 +857,7 @@ export default function AdminDashboard() {
                   onChange={(e) => setSiteForm({ ...siteForm, ad_preroll: e.target.value })}
                   placeholder="<script>…</script> / <ins>…</ins>"
                   className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                <CodeWarn code={siteForm.ad_preroll} de={lang === "de"} />
               </div>
               <div>
                 <label className="text-sm text-muted-foreground">{t("admin.ads.prerollSeconds")}</label>
@@ -825,8 +866,76 @@ export default function AdminDashboard() {
                   onChange={(e) => setSiteForm({ ...siteForm, ad_preroll_seconds: Math.max(0, Math.min(60, parseInt(e.target.value, 10) || 0)) })}
                   className="mt-1 w-32 bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
               </div>
+              <div className="pt-3 border-t border-border/60 space-y-3" data-testid="repeat-settings">
+                <label className="flex items-center gap-3 cursor-pointer" data-testid="ad-repeat-enabled-toggle">
+                  <input type="checkbox" checked={siteForm.ad_preroll_repeat_enabled}
+                    onChange={(e) => setSiteForm({ ...siteForm, ad_preroll_repeat_enabled: e.target.checked })}
+                    className="w-4 h-4 accent-brand" />
+                  <span className="text-sm font-medium">{t("admin.ads.repeatEnable")}</span>
+                </label>
+                <p className="text-xs text-muted-foreground -mt-1">{t("admin.ads.repeatHint")}</p>
+                <div>
+                  <label className="text-sm text-muted-foreground">{t("admin.ads.repeatMinutes")}</label>
+                  <input type="number" min={1} max={240} data-testid="setting-ad_preroll_repeat_minutes"
+                    value={siteForm.ad_preroll_repeat_minutes}
+                    onChange={(e) => setSiteForm({ ...siteForm, ad_preroll_repeat_minutes: Math.max(1, Math.min(240, parseInt(e.target.value, 10) || 1)) })}
+                    className="mt-1 w-32 bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                </div>
+              </div>
+              <div className="pt-3 border-t border-border/60 space-y-3" data-testid="postroll-settings">
+                <label className="flex items-center gap-3 cursor-pointer" data-testid="ad-postroll-enabled-toggle">
+                  <input type="checkbox" checked={siteForm.ad_postroll_enabled}
+                    onChange={(e) => setSiteForm({ ...siteForm, ad_postroll_enabled: e.target.checked })}
+                    className="w-4 h-4 accent-brand" />
+                  <span className="text-sm font-medium">{t("admin.ads.postrollEnable")}</span>
+                </label>
+                <p className="text-xs text-muted-foreground -mt-1">{t("admin.ads.postrollHint")}</p>
+                <div>
+                  <label className="text-sm text-muted-foreground">{t("admin.ads.postroll")}</label>
+                  <textarea data-testid="setting-ad_postroll" rows={3} value={siteForm.ad_postroll}
+                    onChange={(e) => setSiteForm({ ...siteForm, ad_postroll: e.target.value })}
+                    placeholder={t("admin.ads.postrollPlaceholder")}
+                    className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                  <CodeWarn code={siteForm.ad_postroll} de={lang === "de"} />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">{t("admin.ads.postrollMinutes")}</label>
+                  <input type="number" min={1} max={600} data-testid="setting-ad_postroll_minutes"
+                    value={siteForm.ad_postroll_minutes}
+                    onChange={(e) => setSiteForm({ ...siteForm, ad_postroll_minutes: Math.max(1, Math.min(600, parseInt(e.target.value, 10) || 1)) })}
+                    className="mt-1 w-32 bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                </div>
+              </div>
             </div>
             <button onClick={saveSite} disabled={savingSite} data-testid="save-ads-button"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
+              <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
+            </button>
+          </div>
+        )}
+
+        {tab === "verify" && siteForm && (
+          <div className="max-w-2xl bg-card border border-border rounded-lg p-6 space-y-5" data-testid="verify-panel">
+            <div>
+              <h3 className="font-display font-bold text-lg flex items-center gap-2"><ShieldCheck size={18} className="text-brand" /> {t("admin.verify.title")}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{t("admin.verify.intro")}</p>
+            </div>
+            {[
+              { key: "verify_juicyads", label: "JuicyAds", ph: "c7e19fdc994ae841f180dc6999eef0c2", note: t("admin.verify.juicyadsNote") },
+              { key: "verify_google", label: "Google Search Console", ph: "google1234567890abcdef.html → nur den Token", note: t("admin.verify.googleNote") },
+              { key: "verify_bing", label: "Bing / Microsoft", ph: "1A2B3C4D5E6F...", note: t("admin.verify.bingNote") },
+            ].map((f) => (
+              <div key={f.key}>
+                <label className="text-sm font-medium">{f.label}</label>
+                {f.note && <p className="text-xs text-muted-foreground mt-0.5 mb-1">{f.note}</p>}
+                <input data-testid={`setting-${f.key}`} value={siteForm[f.key]} spellCheck={false}
+                  onChange={(e) => setSiteForm({ ...siteForm, [f.key]: e.target.value })}
+                  placeholder={f.ph}
+                  className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">{t("admin.verify.hint")}</p>
+            <button onClick={saveSite} disabled={savingSite} data-testid="save-verify-button"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
               <Save size={18} /> {savingSite ? t("form.saving") : t("admin.settings.save")}
             </button>

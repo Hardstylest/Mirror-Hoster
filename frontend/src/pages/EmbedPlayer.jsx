@@ -129,7 +129,17 @@ export default function EmbedPlayer({ full = false }) {
         {full && <AdSlot html={settings.ad_player_top} testid="ad-player-top" className="flex justify-center mb-4" />}
 
         <VideoPlayer hosts={data.hosts} onHostView={recordHostView} poster={data.thumbnail} fill={!full}
-          preroll={{ enabled: settings.ad_preroll_enabled, html: settings.ad_preroll, seconds: settings.ad_preroll_seconds }} />
+          preroll={{ enabled: settings.ad_preroll_enabled, html: settings.ad_preroll, seconds: settings.ad_preroll_seconds }}
+          ads={{
+            repeatEnabled: settings.ad_preroll_repeat_enabled,
+            repeatMinutes: settings.ad_preroll_repeat_minutes,
+            repeatHtml: settings.ad_preroll,
+            repeatSeconds: settings.ad_preroll_seconds,
+            postrollEnabled: settings.ad_postroll_enabled,
+            postrollHtml: settings.ad_postroll || settings.ad_preroll,
+            postrollMinutes: settings.ad_postroll_minutes,
+            postrollSeconds: settings.ad_preroll_seconds,
+          }} />
 
         {full && <AdSlot html={settings.ad_player_bottom} testid="ad-player-bottom" className="flex justify-center mt-4" />}
 

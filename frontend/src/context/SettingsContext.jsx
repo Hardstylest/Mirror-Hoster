@@ -33,8 +33,19 @@ const FALLBACK = {
   ad_footer: "",
   ad_player_top: "",
   ad_player_bottom: "",
+  ad_preroll: "",
+  ad_preroll_enabled: false,
+  ad_preroll_seconds: 8,
+  ad_preroll_repeat_enabled: false,
+  ad_preroll_repeat_minutes: 10,
+  ad_postroll_enabled: false,
+  ad_postroll: "",
+  ad_postroll_minutes: 30,
   custom_head: "",
   custom_footer: "",
+  verify_google: "",
+  verify_bing: "",
+  verify_juicyads: "",
   turnstile_enabled: false,
   turnstile_site_key: "",
   turnstile_login: true,
@@ -68,6 +79,20 @@ export const SettingsProvider = ({ children }) => {
 
   useEffect(() => { injectCustomHTML(settings.custom_head || "", document.head, "head"); }, [settings.custom_head]);
   useEffect(() => { injectCustomHTML(settings.custom_footer || "", document.body, "footer"); }, [settings.custom_footer]);
+
+  useEffect(() => {
+    const esc = (s) => String(s).replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const token = (v) => {
+      // accept either a bare token or a full <meta ... content="TOKEN"> paste
+      const m = String(v || "").match(/content=["']([^"']+)["']/i);
+      return (m ? m[1] : v || "").trim();
+    };
+    const metas = [];
+    if (settings.verify_google) metas.push(`<meta name="google-site-verification" content="${esc(token(settings.verify_google))}">`);
+    if (settings.verify_bing) metas.push(`<meta name="msvalidate.01" content="${esc(token(settings.verify_bing))}">`);
+    if (settings.verify_juicyads) metas.push(`<meta name="juicyads-site-verification" content="${esc(token(settings.verify_juicyads))}">`);
+    injectCustomHTML(metas.join("\n"), document.head, "verify");
+  }, [settings.verify_google, settings.verify_bing, settings.verify_juicyads]);
 
   return (
     <SettingsContext.Provider value={{ settings, reloadSettings: load }}>
