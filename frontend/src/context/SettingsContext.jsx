@@ -38,6 +38,7 @@ const FALLBACK = {
   ad_preroll_seconds: 8,
   ad_preroll_repeat_enabled: false,
   ad_preroll_repeat_minutes: 10,
+  ad_preroll_repeat_max: 0,
   ad_postroll_enabled: false,
   ad_postroll: "",
   ad_postroll_minutes: 30,

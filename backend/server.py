@@ -2466,6 +2466,7 @@ class SettingsInput(BaseModel):
     ad_preroll_seconds: int = 8
     ad_preroll_repeat_enabled: bool = False
     ad_preroll_repeat_minutes: int = 10
+    ad_preroll_repeat_max: int = 0
     ad_postroll_enabled: bool = False
     ad_postroll: str = ""
     ad_postroll_minutes: int = 30
@@ -2498,7 +2499,7 @@ PUBLIC_SETTINGS_KEYS = {
     "ad_header", "ad_footer", "ad_player_top", "ad_player_bottom",
     "custom_head", "custom_footer",
     "ad_preroll", "ad_preroll_enabled", "ad_preroll_seconds",
-    "ad_preroll_repeat_enabled", "ad_preroll_repeat_minutes",
+    "ad_preroll_repeat_enabled", "ad_preroll_repeat_minutes", "ad_preroll_repeat_max",
     "ad_postroll_enabled", "ad_postroll", "ad_postroll_minutes",
     "verify_google", "verify_bing", "verify_juicyads",
     "turnstile_enabled", "turnstile_site_key", "turnstile_login", "turnstile_register", "turnstile_gate",
@@ -2700,6 +2701,7 @@ DEFAULT_SETTINGS = {
     "ad_preroll_seconds": 8,
     "ad_preroll_repeat_enabled": False,
     "ad_preroll_repeat_minutes": 10,
+    "ad_preroll_repeat_max": 0,
     "ad_postroll_enabled": False,
     "ad_postroll": "",
     "ad_postroll_minutes": 30,

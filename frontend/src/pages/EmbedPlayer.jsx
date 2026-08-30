@@ -133,6 +133,7 @@ export default function EmbedPlayer({ full = false }) {
           ads={{
             repeatEnabled: settings.ad_preroll_repeat_enabled,
             repeatMinutes: settings.ad_preroll_repeat_minutes,
+            repeatMax: settings.ad_preroll_repeat_max,
             repeatHtml: settings.ad_preroll,
             repeatSeconds: settings.ad_preroll_seconds,
             postrollEnabled: settings.ad_postroll_enabled,

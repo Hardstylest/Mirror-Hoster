@@ -16,6 +16,7 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll, ads, fill = fa
   const repeatRef = useRef(null);
   const postrollRef = useRef(null);
   const ocRef = useRef(null);
+  const repeatCountRef = useRef(0);
 
   const prerollEnabled = !!(preroll?.enabled && preroll?.html);
   const prerollSeconds = Math.max(0, parseInt(preroll?.seconds, 10) || 0);
@@ -41,9 +42,17 @@ export const VideoPlayer = ({ hosts, onHostView, poster, preroll, ads, fill = fa
     if (!started || !ads) return;
     const repMin = Math.max(0, parseInt(ads.repeatMinutes, 10) || 0);
     const postMin = Math.max(0, parseInt(ads.postrollMinutes, 10) || 0);
+    const repMax = Math.max(0, parseInt(ads.repeatMax, 10) || 0); // 0 = unlimited
+    repeatCountRef.current = 0;
     if (ads.repeatEnabled && ads.repeatHtml && repMin > 0) {
       repeatRef.current = setInterval(() => {
-        setOverlayAd((cur) => cur || { html: ads.repeatHtml, seconds: Math.max(0, parseInt(ads.repeatSeconds, 10) || 0) });
+        if (repMax > 0 && repeatCountRef.current >= repMax) { clearInterval(repeatRef.current); return; }
+        setOverlayAd((cur) => {
+          if (cur) return cur; // don't stack
+          repeatCountRef.current += 1;
+          if (repMax > 0 && repeatCountRef.current >= repMax) clearInterval(repeatRef.current);
+          return { html: ads.repeatHtml, seconds: Math.max(0, parseInt(ads.repeatSeconds, 10) || 0) };
+        });
       }, repMin * 60000);
     }
     if (ads.postrollEnabled && ads.postrollHtml && postMin > 0) {

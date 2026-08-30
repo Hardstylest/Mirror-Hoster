@@ -5,6 +5,7 @@ import { useSettings } from "../context/SettingsContext";
 import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
+import { AdSlot } from "../components/AdSlot";
 import {
   Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup, Search, Eraser, History, Code2,
 } from "lucide-react";
@@ -35,6 +36,27 @@ const CodeWarn = ({ code, de }) => {
       <ul className="mt-1 list-disc list-inside space-y-0.5">
         {issues.map((i, k) => <li key={k} className="text-xs text-amber-500/90">{i}</li>)}
       </ul>
+    </div>
+  );
+};
+
+// Live mock of how a pre/post-roll ad looks inside the player overlay.
+const AdPreview = ({ html, label, de, testid }) => {
+  if (!html || !html.trim()) return null;
+  return (
+    <div className="mt-2" data-testid={testid}>
+      <p className="text-xs text-muted-foreground mb-1">{de ? "Live-Vorschau (so sieht es im Player aus):" : "Live preview (how it looks in the player):"}</p>
+      <div className="relative w-full max-w-sm aspect-video bg-black rounded-md border border-border overflow-hidden">
+        <span className="absolute top-2 left-3 z-10 text-[11px] uppercase tracking-wider text-zinc-400 font-mono pointer-events-none">{label}</span>
+        <div className="absolute inset-0 flex items-center justify-center p-2 overflow-auto">
+          <AdSlot html={html} testid={`${testid}-slot`} className="flex items-center justify-center" />
+        </div>
+        <div className="absolute bottom-3 right-3 z-10">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-brand text-black font-semibold text-xs shadow-2xl">
+            {de ? "Werbung überspringen" : "Skip ad"}
+          </span>
+        </div>
+      </div>
     </div>
   );
 };
@@ -326,6 +348,21 @@ export default function AdminDashboard() {
   const { reloadSettings } = useSettings();
   const [siteForm, setSiteForm] = useState(null);
   const [savingSite, setSavingSite] = useState(false);
+  const [verifyResults, setVerifyResults] = useState({});
+
+  const META_NAME = { verify_juicyads: "juicyads-site-verification", verify_google: "google-site-verification", verify_bing: "msvalidate.01" };
+  const extractToken = (v) => { const m = String(v || "").match(/content=["']([^"']+)["']/i); return (m ? m[1] : v || "").trim(); };
+  const testVerify = (key) => {
+    const want = extractToken(siteForm[key]);
+    const el = document.head.querySelector(`meta[name="${META_NAME[key]}"]`);
+    const got = el ? el.getAttribute("content") : null;
+    let status;
+    if (!want) status = "empty";
+    else if (got && got === want) status = "ok";
+    else if (got) status = "mismatch";
+    else status = "missing";
+    setVerifyResults((r) => ({ ...r, [key]: status }));
+  };
   const [refreshingTiers, setRefreshingTiers] = useState(false);
   const [userModal, setUserModal] = useState(null); // {mode:'create'} | {mode:'password', user}
   const [userSearch, setUserSearch] = useState("");
@@ -439,6 +476,7 @@ export default function AdminDashboard() {
     ad_preroll_seconds: cfg.ad_preroll_seconds ?? 8,
     ad_preroll_repeat_enabled: !!cfg.ad_preroll_repeat_enabled,
     ad_preroll_repeat_minutes: cfg.ad_preroll_repeat_minutes ?? 10,
+    ad_preroll_repeat_max: cfg.ad_preroll_repeat_max ?? 0,
     ad_postroll_enabled: !!cfg.ad_postroll_enabled,
     ad_postroll: cfg.ad_postroll || "",
     ad_postroll_minutes: cfg.ad_postroll_minutes ?? 30,
@@ -858,6 +896,7 @@ export default function AdminDashboard() {
                   placeholder="<script>…</script> / <ins>…</ins>"
                   className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
                 <CodeWarn code={siteForm.ad_preroll} de={lang === "de"} />
+                <AdPreview html={siteForm.ad_preroll} label={t("player.adLabel")} de={lang === "de"} testid="preroll-preview" />
               </div>
               <div>
                 <label className="text-sm text-muted-foreground">{t("admin.ads.prerollSeconds")}</label>
@@ -881,6 +920,14 @@ export default function AdminDashboard() {
                     onChange={(e) => setSiteForm({ ...siteForm, ad_preroll_repeat_minutes: Math.max(1, Math.min(240, parseInt(e.target.value, 10) || 1)) })}
                     className="mt-1 w-32 bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
                 </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">{t("admin.ads.repeatMax")}</label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-1">{t("admin.ads.repeatMaxHint")}</p>
+                  <input type="number" min={0} max={50} data-testid="setting-ad_preroll_repeat_max"
+                    value={siteForm.ad_preroll_repeat_max}
+                    onChange={(e) => setSiteForm({ ...siteForm, ad_preroll_repeat_max: Math.max(0, Math.min(50, parseInt(e.target.value, 10) || 0)) })}
+                    className="mt-1 w-32 bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                </div>
               </div>
               <div className="pt-3 border-t border-border/60 space-y-3" data-testid="postroll-settings">
                 <label className="flex items-center gap-3 cursor-pointer" data-testid="ad-postroll-enabled-toggle">
@@ -897,6 +944,7 @@ export default function AdminDashboard() {
                     placeholder={t("admin.ads.postrollPlaceholder")}
                     className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
                   <CodeWarn code={siteForm.ad_postroll} de={lang === "de"} />
+                  <AdPreview html={siteForm.ad_postroll || siteForm.ad_preroll} label={t("player.adLabel")} de={lang === "de"} testid="postroll-preview" />
                 </div>
                 <div>
                   <label className="text-sm text-muted-foreground">{t("admin.ads.postrollMinutes")}</label>
@@ -928,10 +976,18 @@ export default function AdminDashboard() {
               <div key={f.key}>
                 <label className="text-sm font-medium">{f.label}</label>
                 {f.note && <p className="text-xs text-muted-foreground mt-0.5 mb-1">{f.note}</p>}
-                <input data-testid={`setting-${f.key}`} value={siteForm[f.key]} spellCheck={false}
-                  onChange={(e) => setSiteForm({ ...siteForm, [f.key]: e.target.value })}
-                  placeholder={f.ph}
-                  className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                <div className="mt-1 flex gap-2">
+                  <input data-testid={`setting-${f.key}`} value={siteForm[f.key]} spellCheck={false}
+                    onChange={(e) => { setSiteForm({ ...siteForm, [f.key]: e.target.value }); setVerifyResults((r) => ({ ...r, [f.key]: undefined })); }}
+                    placeholder={f.ph}
+                    className="flex-1 bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+                  <button type="button" onClick={() => testVerify(f.key)} data-testid={`verify-test-${f.key}`}
+                    className="shrink-0 px-4 rounded-md border border-border text-sm hover:border-brand hover:text-brand transition-colors">{t("admin.verify.test")}</button>
+                </div>
+                {verifyResults[f.key] === "ok" && <p data-testid={`verify-result-${f.key}`} className="mt-1 text-xs text-online flex items-center gap-1.5"><CircleCheck size={13} /> {t("admin.verify.ok")}</p>}
+                {verifyResults[f.key] === "missing" && <p data-testid={`verify-result-${f.key}`} className="mt-1 text-xs text-offline flex items-center gap-1.5"><AlertTriangle size={13} /> {t("admin.verify.missing")}</p>}
+                {verifyResults[f.key] === "mismatch" && <p data-testid={`verify-result-${f.key}`} className="mt-1 text-xs text-amber-500 flex items-center gap-1.5"><AlertTriangle size={13} /> {t("admin.verify.mismatch")}</p>}
+                {verifyResults[f.key] === "empty" && <p data-testid={`verify-result-${f.key}`} className="mt-1 text-xs text-muted-foreground">{t("admin.verify.emptyField")}</p>}
               </div>
             ))}
             <p className="text-xs text-muted-foreground">{t("admin.verify.hint")}</p>
