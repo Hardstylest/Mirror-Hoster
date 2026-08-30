@@ -2457,6 +2457,8 @@ class SettingsInput(BaseModel):
     footer_text: str = ""
     ad_header: str = ""
     ad_footer: str = ""
+    custom_head: str = ""
+    custom_footer: str = ""
     ad_player_top: str = ""
     ad_player_bottom: str = ""
     ad_preroll: str = ""
@@ -2486,6 +2488,7 @@ class SettingsInput(BaseModel):
 PUBLIC_SETTINGS_KEYS = {
     "site_name", "tagline", "description", "footer_text",
     "ad_header", "ad_footer", "ad_player_top", "ad_player_bottom",
+    "custom_head", "custom_footer",
     "ad_preroll", "ad_preroll_enabled", "ad_preroll_seconds",
     "turnstile_enabled", "turnstile_site_key", "turnstile_login", "turnstile_register", "turnstile_gate",
     "antiadblock_enabled", "antiadblock_mode", "registration_open",
@@ -2677,6 +2680,8 @@ DEFAULT_SETTINGS = {
     "footer_text": "For legal content only.",
     "ad_header": "",
     "ad_footer": "",
+    "custom_head": "",
+    "custom_footer": "",
     "ad_player_top": "",
     "ad_player_bottom": "",
     "ad_preroll": "",

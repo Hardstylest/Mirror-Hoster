@@ -6,7 +6,8 @@ import { DashboardLayout } from "../components/DashboardLayout";
 import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 import { MirrorCleanupPanel, LegacyReassignPanel } from "../components/AdminMirrorTools";
-import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench, History, Trash2 } from "lucide-react";
+import { MirrorEditor } from "../components/MirrorEditor";
+import { WifiOff, RefreshCw, ExternalLink, Pencil, CheckCircle2, Clock, Wrench, History, Trash2, X } from "lucide-react";
 
 const fmtDate = (iso) => {
   if (!iso) return null;
@@ -31,6 +32,7 @@ export default function OfflineStreams() {
   const [recheckingAll, setRecheckingAll] = useState(false);
   const [bulkFixing, setBulkFixing] = useState(false);
   const [logs, setLogs] = useState([]);
+  const [editFor, setEditFor] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -214,7 +216,7 @@ export default function OfflineStreams() {
                     </button>
                     <a href={`/embed/${m.slug}`} target="_blank" rel="noreferrer" data-testid={`offline-open-${m.id}`} title={t("offline.openMirror")}
                       className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><ExternalLink size={18} /></a>
-                    <Link to={`/dashboard/edit/${m.id}`} data-testid={`offline-edit-${m.id}`} title={t("offline.editMirror")}
+                    <Link to={`/dashboard/edit/${m.id}`} onClick={(e) => { e.preventDefault(); setEditFor(m); }} data-testid={`offline-edit-${m.id}`} title={t("offline.editMirror")}
                       className="p-2 rounded-md text-muted-foreground hover:text-brand hover:bg-secondary transition-colors"><Pencil size={18} /></Link>
                   </div>
                 </div>
@@ -250,6 +252,20 @@ export default function OfflineStreams() {
           )}
         </div>
       </div>
+
+      {editFor && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-start justify-center p-4 overflow-y-auto" data-testid="offline-edit-modal" onClick={() => setEditFor(null)}>
+          <div className="bg-card border border-border rounded-lg w-full max-w-2xl my-8" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-card rounded-t-lg z-10">
+              <h3 className="font-display font-bold text-lg">{t("form.edit")}</h3>
+              <button onClick={() => setEditFor(null)} data-testid="offline-edit-modal-close" className="text-muted-foreground hover:text-foreground"><X size={20} /></button>
+            </div>
+            <div className="p-6">
+              <MirrorEditor id={editFor.id} onSuccess={() => { setEditFor(null); load(); }} />
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

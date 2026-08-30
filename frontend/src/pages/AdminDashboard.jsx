@@ -6,7 +6,7 @@ import { useI18n } from "../context/I18nContext";
 import { useAuth } from "../context/AuthContext";
 import { DashboardLayout } from "../components/DashboardLayout";
 import {
-  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup, Search, Eraser, History,
+  Users, Film, Server, Eye, WifiOff, Plus, Pencil, Trash2, X, Save, RefreshCw, ShieldCheck, ShieldOff, KeyRound, Ban, CircleCheck, Download, Upload, CloudUpload, DatabaseBackup, Search, Eraser, History, Code2,
 } from "lucide-react";
 
 const TIER_SCRAPER_PROVIDERS = ["doodstream", "voe", "firestream", "playmate", "vidara", "vinovo", "vidnest"];
@@ -404,6 +404,7 @@ export default function AdminDashboard() {
     description: cfg.description || "", footer_text: cfg.footer_text || "",
     ad_header: cfg.ad_header || "", ad_footer: cfg.ad_footer || "",
     ad_player_top: cfg.ad_player_top || "", ad_player_bottom: cfg.ad_player_bottom || "",
+    custom_head: cfg.custom_head || "", custom_footer: cfg.custom_footer || "",
     ad_preroll: cfg.ad_preroll || "",
     ad_preroll_enabled: !!cfg.ad_preroll_enabled,
     ad_preroll_seconds: cfg.ad_preroll_seconds ?? 8,
@@ -764,6 +765,20 @@ export default function AdminDashboard() {
               <label className="text-sm text-muted-foreground">{t("admin.settings.footer")}</label>
               <input data-testid="setting-footer" value={siteForm.footer_text} onChange={(e) => setSiteForm({ ...siteForm, footer_text: e.target.value })}
                 className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+            <div className="pt-4 border-t border-border">
+              <label className="text-sm font-medium flex items-center gap-2"><Code2 size={15} className="text-brand" /> {t("admin.settings.customHead")}</label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-1">{t("admin.settings.customHeadHint")}</p>
+              <textarea data-testid="setting-custom-head" rows={4} value={siteForm.custom_head} onChange={(e) => setSiteForm({ ...siteForm, custom_head: e.target.value })}
+                placeholder={'<meta name="..." content="..." />\n<script>…</script>'}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
+            </div>
+            <div>
+              <label className="text-sm font-medium flex items-center gap-2"><Code2 size={15} className="text-brand" /> {t("admin.settings.customFooter")}</label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-1">{t("admin.settings.customFooterHint")}</p>
+              <textarea data-testid="setting-custom-footer" rows={4} value={siteForm.custom_footer} onChange={(e) => setSiteForm({ ...siteForm, custom_footer: e.target.value })}
+                placeholder={'<script>…</script>'}
+                className="mt-1 w-full bg-surface border border-border rounded-md px-4 py-2.5 font-mono text-xs focus:border-brand focus:ring-1 focus:ring-brand outline-none transition-colors" />
             </div>
             <button onClick={saveSite} disabled={savingSite} data-testid="save-settings-button"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-md bg-brand text-black font-semibold hover:bg-brand-hover disabled:opacity-60 transition-colors">
