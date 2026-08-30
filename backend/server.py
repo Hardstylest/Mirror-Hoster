@@ -2568,12 +2568,10 @@ async def _is_installed() -> bool:
 
 @api_router.get("/health")
 async def health():
-    db_ok = True
-    try:
-        await client.admin.command("ping")
-    except Exception:
-        db_ok = False
-    return {"status": "ok" if db_ok else "degraded", "db": db_ok}
+    # Ultra-lightweight liveness probe: returns 200 instantly with no DB or external
+    # calls, so the origin responds the moment uvicorn accepts connections (avoids the
+    # brief post-deploy window where a not-yet-ready backend caused Cloudflare 520s).
+    return {"status": "ok"}
 
 @api_router.get("/setup/status")
 async def setup_status():
@@ -3292,12 +3290,21 @@ async def tier_updater():
             logger.error(f"Tier updater error: {e}")
         await asyncio.sleep(interval)
 
-@app.on_event("startup")
-async def on_startup():
-    await seed()
+async def _run_startup():
+    # Runs off the critical path so the server accepts connections immediately after boot.
+    # Heavy one-time work (index build, host merge/migrations, seeding) happens here in the
+    # background instead of blocking the startup event.
+    try:
+        await seed()
+    except Exception as e:
+        logger.error(f"Startup seed failed: {e}")
     asyncio.create_task(offline_checker())
     asyncio.create_task(tier_updater())
     asyncio.create_task(backup_scheduler())
+
+@app.on_event("startup")
+async def on_startup():
+    asyncio.create_task(_run_startup())
 
 @app.on_event("shutdown")
 async def on_shutdown():

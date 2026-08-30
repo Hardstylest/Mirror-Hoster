@@ -298,3 +298,9 @@ Build a website like listmirror.com. Users paste embed links from streaming host
 - **Werbe-Vorschau (Task 3)**: `<AdPreview>` in AdminDashboard (nutzt AdSlot) rendert Pre-Roll (`preroll-preview`) und Post-Roll (`postroll-preview`, Fallback auf Pre-Roll-Code) in einem 16:9-Mock-Player mit „Werbung"-Label + „Werbung überspringen"-Button. Erscheint live unter dem jeweiligen Code-Feld sobald Code eingetragen ist.
 - Verifiziert: Backend-Roundtrip (repeat_max gespeichert + öffentlich), Screenshots (Limit-Feld, Live-Vorschau mit Demo-Ad im Mock-Player, Verify-Test grün „Auf der Seite gefunden"). Preview-DB Testwerte danach zurückgesetzt.
 - ERFORDERT REDEPLOY für Production.
+
+## Deploy-Stabilität: schlanker Start + sofortige Health-Route (2026-06)
+- Ursache 520 nach Redeploy (EMMY/Oracle): nginx nahm Verbindungen an, bevor uvicorn bereit war. Grund: Startup-Handler rief `await seed()` BLOCKIEREND auf (inkl. `merge_duplicate_hosts`, `migrate_voe_thumbnails`), wodurch "startup complete" verzögert wurde; zusätzlich pingte `/api/health` die DB.
+- Fix (`server.py`): `/api/health` gibt jetzt sofort `{"status":"ok"}` ohne DB/externe Calls zurück. Neuer `_run_startup()` läuft als Hintergrund-Task (`asyncio.create_task` im `on_startup`) — seed + Scheduler (offline_checker/tier_updater/backup_scheduler) starten NACH dem Akzeptieren von Verbindungen, nicht davor. seed in try/except gekapselt.
+- Verifiziert: nach `restart backend` liefert /api/health sofort HTTP 200 (~0.13s); "Application startup complete" erscheint sofort, Tier-Update ~4s später im Hintergrund; login/mirrors/hosts/settings alle 200.
+- Hinweis: `/api/health` ist der relevante Endpunkt (Top-Level /health würde ans Frontend routen). ERFORDERT REDEPLOY für Production.
